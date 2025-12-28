@@ -352,6 +352,22 @@
             font-size: 20px;
             margin-bottom: 20px;
         }
+        
+        /* Click to start prompt */
+        #click-to-start {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 18px;
+            text-align: center;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 10px;
+            display: none;
+            z-index: 20;
+        }
     </style>
 </head>
 <body>
@@ -398,6 +414,7 @@
         SHIFT: Descend | B: Shop<br>
         Free flight mode enabled
     </div>
+    <div id="click-to-start">Click to start playing</div>
     <div id="break-progress">
         <div id="break-progress-bar"></div>
     </div>
@@ -474,6 +491,10 @@
         // Spectator movement state
         const spectatorMoveState = { fwd: false, bwd: false, l: false, r: false, up: false, down: false };
 
+        // Pointer lock state
+        let isPointerLocked = false;
+        let waitingForClickToStart = false;
+
         // --- Three.js Setup ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x6eb1ff);
@@ -485,6 +506,13 @@
         const sun = new THREE.DirectionalLight(0xffffff, 0.7);
         sun.position.set(20, 50, 20);
         scene.add(sun);
+
+        // Initialize controls but don't lock yet
+        camera.position.set(9 + 2.5, 20, 9 + 2.5);
+        const controls = new PointerLockControls(camera, document.body);
+        const velocity = new THREE.Vector3();
+        const moveState = { fwd: false, bwd: false, l: false, r: false };
+        let onGround = false;
 
         // Load textures
         const textureLoader = new THREE.TextureLoader();
@@ -672,14 +700,13 @@
         const CROUCH_HEIGHT = 1.3;
         const PLAYER_RADIUS = 0.4;
 
-        camera.position.set(9 + 2.5, 20, 9 + 2.5);
-        const controls = new PointerLockControls(camera, document.body);
-        const velocity = new THREE.Vector3();
-        const moveState = { fwd: false, bwd: false, l: false, r: false };
-        let onGround = false;
-
         // Event listeners
         document.addEventListener('keydown', (e) => {
+            // Don't process game keys if menu is visible or pointer isn't locked
+            if (document.getElementById('main-menu').style.display !== 'none' || !isPointerLocked) {
+                return;
+            }
+            
             if(e.code === 'KeyB') toggleShop();
             if(document.getElementById('shop').style.display === 'block') return;
 
@@ -731,6 +758,11 @@
         });
 
         document.addEventListener('keyup', (e) => {
+            // Don't process game keys if menu is visible or pointer isn't locked
+            if (document.getElementById('main-menu').style.display !== 'none' || !isPointerLocked) {
+                return;
+            }
+            
             // Spectator movement
             if (isSpectator) {
                 switch(e.code) {
@@ -760,9 +792,33 @@
 
         const raycaster = new THREE.Raycaster();
 
+        // Function to start pointer lock when user clicks
+        function startPointerLock() {
+            if (!isPointerLocked && document.getElementById('main-menu').style.display === 'none') {
+                controls.lock();
+                return true;
+            }
+            return false;
+        }
+
+        // Click handler for the game canvas
+        renderer.domElement.addEventListener('click', (e) => {
+            if (waitingForClickToStart) {
+                startPointerLock();
+                document.getElementById('click-to-start').style.display = 'none';
+                waitingForClickToStart = false;
+            }
+        });
+
         document.addEventListener('mousedown', (e) => {
-            if (!controls.isLocked) {
-                if(document.getElementById('shop').style.display !== 'block') controls.lock();
+            // Don't process game input if menu is visible
+            if (document.getElementById('main-menu').style.display !== 'none') {
+                return;
+            }
+            
+            // If pointer isn't locked yet, try to lock it
+            if (!isPointerLocked) {
+                startPointerLock();
                 return;
             }
 
@@ -849,6 +905,19 @@
         });
 
         document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        // Pointer lock change events
+        controls.addEventListener('lock', () => {
+            isPointerLocked = true;
+        });
+
+        controls.addEventListener('unlock', () => {
+            isPointerLocked = false;
+            // Don't show click to start if menu is visible
+            if (document.getElementById('main-menu').style.display === 'none') {
+                document.getElementById('click-to-start').style.display = 'block';
+            }
+        });
 
         // Collision functions (only for non-spectator)
         function checkCollision(pos) {
@@ -949,7 +1018,7 @@
             }
 
             // Movement and physics for non-spectator
-            if (!isSpectator && controls.isLocked) {
+            if (!isSpectator && isPointerLocked) {
                 velocity.y -= 20.0 * delta;
 
                 const direction = new THREE.Vector3();
@@ -1006,7 +1075,7 @@
             }
 
             // Spectator movement
-            if (isSpectator && controls.isLocked) {
+            if (isSpectator && isPointerLocked) {
                 const speed = 10;
                 const moveSpeed = speed * delta;
 
@@ -1041,8 +1110,8 @@
                 }
             }
 
-            // Player update send (only if not spectator)
-            if (!isSpectator && controls.isLocked && socket.connected && time - lastPlayerUpdate > PLAYER_UPDATE_RATE) {
+            // Player update send (only if not spectator and pointer is locked)
+            if (!isSpectator && isPointerLocked && socket.connected && time - lastPlayerUpdate > PLAYER_UPDATE_RATE) {
                 socket.emit('playerUpdate', {
                     pos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
                     rot: { yaw: camera.rotation.y, pitch: camera.rotation.x },
@@ -1210,10 +1279,17 @@
         }
 
         function toggleShop() {
+            if (!isPointerLocked) return;
+            
             const shop = document.getElementById('shop');
             const isVisible = shop.style.display === 'block';
             shop.style.display = isVisible ? 'none' : 'block';
-            isVisible ? controls.lock() : (renderShop(), controls.unlock());
+            if (isVisible) {
+                controls.lock();
+            } else {
+                controls.unlock();
+                renderShop();
+            }
         }
 
         function getPlayerColor(id) {
@@ -1361,7 +1437,8 @@
         function spectate() {
             setSpectatorMode(true);
             document.getElementById('main-menu').style.display = 'none';
-            controls.lock();
+            waitingForClickToStart = true;
+            document.getElementById('click-to-start').style.display = 'block';
         }
 
         // Socket events
@@ -1386,7 +1463,8 @@
                 }
                 document.getElementById('main-menu').style.display = 'none';
                 setSpectatorMode(true);
-                controls.lock();
+                waitingForClickToStart = true;
+                document.getElementById('click-to-start').style.display = 'block';
             }
         });
 
@@ -1527,6 +1605,10 @@
             document.getElementById('spectate-btn').disabled = false;
             document.getElementById('waiting-players').style.display = 'none';
             setSpectatorMode(true);
+            isPointerLocked = false;
+            controls.unlock();
+            document.getElementById('click-to-start').style.display = 'none';
+            waitingForClickToStart = false;
         });
 
         socket.on('playerReset', (data) => {
@@ -1543,6 +1625,8 @@
             setSpectatorMode(true);
             camera.position.set(data.pos.x, data.pos.y, data.pos.z);
             velocity.set(0, 0, 0);
+            waitingForClickToStart = true;
+            document.getElementById('click-to-start').style.display = 'block';
             showNotification('You are now a spectator');
         });
 
@@ -1564,7 +1648,8 @@
             camera.position.set(data.pos.x, data.pos.y, data.pos.z);
             setSpectatorMode(false);
             document.getElementById('main-menu').style.display = 'none';
-            controls.lock();
+            waitingForClickToStart = true;
+            document.getElementById('click-to-start').style.display = 'block';
         });
 
         socket.on('joinGameSuccess', () => {
@@ -1575,6 +1660,12 @@
         socket.on('timeUpdate', (timeLeft) => {
             updateTimerDisplay(timeLeft);
         });
+
+        // Reset game function
+        function resetGame() {
+            // This is called from gameEnd event
+            socket.emit('leaveGame');
+        }
 
         selectSlot(0);
         updateUI();
