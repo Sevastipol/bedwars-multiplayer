@@ -586,7 +586,7 @@
             raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
             const intersects = raycaster.intersectObjects(blocksInScene);
 
-            if (e.button === 2) { // Build (unchanged)
+            if (e.button === 2) { // Build
                 const currentSlot = inventory[selectedSlotIndex];
                 if (intersects.length > 0 && currentSlot && currentSlot.count > 0) {
                     const intersect = intersects[0];
@@ -616,7 +616,7 @@
                     if (canPlace) {
                         const type = currentSlot.type;
                         socket.emit('placeAttempt', { x: blockX, y: blockY, z: blockZ, type });
-                        addBlockMesh(blockX, blockY, blockZ, type); // Optimistic
+                        // Removed optimistic addBlockMesh
                     }
                 }
             } else if (e.button === 0) { // Break (unchanged)
@@ -702,7 +702,7 @@
             const delta = Math.min((time - prevTime) / 1000, 0.05);
             prevTime = time;
 
-            // Breaking logic unchanged
+            // Breaking logic 
             if (isBreaking && breakingBlock) {
                 const elapsed = Date.now() - breakingStartTime;
                 const progress = Math.min((elapsed / breakingDuration) * 100, 100);
@@ -721,7 +721,7 @@
                     const y = Math.floor(breakingBlock.position.y - 0.5);
                     const z = Math.floor(breakingBlock.position.z - 0.5);
                     socket.emit('breakAttempt', { x, y, z });
-                    removeBlockMesh(x, y, z); // Optimistic
+                    // Removed optimistic removeBlockMesh
                     isBreaking = false;
                     breakingBlock = null;
                     document.getElementById('break-progress').style.display = 'none';
@@ -758,7 +758,7 @@
                 const dist = camera.position.distanceTo(pickup.position);
                 if (dist < 1.5) {
                     socket.emit('claimPickupAttempt', pickup.userData.id);
-                    removePickupMesh(pickup.userData.id); // Optimistic
+                    removePickupMesh(pickup.userData.id); // Optimistic for pickups kept
                 }
             }
 
