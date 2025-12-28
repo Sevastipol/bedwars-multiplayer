@@ -226,6 +226,21 @@
             font-size: 24px;
             z-index: 100;
         }
+
+        #notification {
+            position: absolute;
+            top: 10%;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 30px;
+            text-shadow: 2px 2px 4px black;
+            background: rgba(0,0,0,0.5);
+            padding: 10px 20px;
+            border-radius: 10px;
+            display: none;
+            z-index: 15;
+        }
     </style>
 </head>
 <body>
@@ -263,6 +278,7 @@
         <div class="shop-grid" id="shop-container"></div>
         <p style="color: #888; margin-top: 20px; font-size: 0.8em;">Press [B] to Close</p>
     </div>
+    <div id="notification"></div>
 
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script type="importmap">
@@ -1080,6 +1096,15 @@
             });
         }
 
+        function showNotification(msg, duration = 3000) {
+            const el = document.getElementById('notification');
+            el.innerText = msg;
+            el.style.display = 'block';
+            setTimeout(() => {
+                el.style.display = 'none';
+            }, duration);
+        }
+
         // Socket events
         socket.on('yourId', (id) => {
             playerId = id;
@@ -1143,7 +1168,7 @@
             updateUI();
         });
         socket.on('buyFailed', () => {
-            alert('Not enough resources or inventory full!');
+            showNotification('Not enough resources or inventory full!');
             renderShop();  // Refresh shop UI
         });
 
@@ -1162,11 +1187,50 @@
         });
 
         socket.on('bedDestroyed', () => {
-            alert('Your bed was destroyed! If you die, you cannot respawn and will be disconnected.');
+            showNotification('Your bed was destroyed!');
         });
 
-        socket.on('noRespawn', () => {
-            alert('No bed, cannot respawn. Disconnected.');
+        socket.on('notification', (msg) => {
+            showNotification(msg);
+        });
+
+        socket.on('countdown', (sec) => {
+            showNotification(`Starting in ${sec}`, 1100);
+        });
+
+        socket.on('gameStart', () => {
+            showNotification('GO!');
+        });
+
+        socket.on('gameEnd', ({ winner }) => {
+            if (winner === playerId) {
+                showNotification('You Win!', 5000);
+            } else {
+                showNotification(`Player ${winner.substring(0,6)} Wins!`, 5000);
+            }
+        });
+
+        socket.on('worldReset', (data) => {
+            blocksInScene.forEach((m) => scene.remove(m));
+            blocksInScene.length = 0;
+            blocksMeshes.clear();
+            resourcePickups.forEach((m) => scene.remove(m));
+            resourcePickups.length = 0;
+            pickupMeshes.clear();
+            resourceSpawners.forEach((m) => scene.remove(m));
+            resourceSpawners.length = 0;
+            data.blocks.forEach(({ x, y, z, type }) => addBlockMesh(x, y, z, type));
+            data.pickups.forEach(addPickupMesh);
+            data.spawners.forEach((s) => addResourceSpawner(s.x, s.y, s.z, s.resourceType, s.interval / 1000));
+        });
+
+        socket.on('playerReset', (data) => {
+            camera.position.set(data.pos.x, data.pos.y, data.pos.z);
+            camera.rotation.set(data.rot.pitch, data.rot.yaw, 0);
+            inventory = data.inventory;
+            currency = data.currency;
+            updateUI();
+            velocity.set(0, 0, 0);
         });
 
         selectSlot(0);
