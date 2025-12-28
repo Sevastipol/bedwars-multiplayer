@@ -1,4 +1,3 @@
-// server.js (Updated with Spectator Mode and Chat)
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -14,7 +13,7 @@ const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => console.log(`Server on port ${PORT}`));
 
-// Config (copied from client)
+// Config
 const BLOCK_TYPES = {
     'Grass': { color: 0x4d9043, cost: { iron: 5 }, breakTime: 1.2, buyAmount: 8, hasTexture: true },
     'Glass': { color: 0xade8f4, cost: { iron: 5 }, breakTime: 0.4, buyAmount: 16, opacity: 0.6 },
@@ -25,15 +24,15 @@ const BLOCK_TYPES = {
 };
 const MAX_STACK = 64;
 const INVENTORY_SIZE = 9;
-const BED_DESTRUCTION_TIME = 10 * 60 * 1000; // 10 minutes
-const ROUND_DURATION = 15 * 60 * 1000; // 15 minutes
+const BED_DESTRUCTION_TIME = 10 * 60 * 1000;
+const ROUND_DURATION = 15 * 60 * 1000;
 
 // State
-const blocks = new Map(); // `${x},${y},${z}` -> type
-const pickups = new Map(); // id -> {x, y, z, resourceType}
+const blocks = new Map();
+const pickups = new Map();
 const spawners = [];
-const players = new Map(); // id -> {pos: {x,y,z}, rot: {yaw, pitch}, crouch: bool, inventory: array, currency: obj, selected: num, bedPos: {x,y,z}|null, lastRespawn: num, spectator: bool, name: string}
-const chatMessages = []; // Store recent chat messages
+const players = new Map();
+const chatMessages = [];
 let gameState = 'waiting';
 let countdownTimer = null;
 let roundStartTime = null;
@@ -76,7 +75,6 @@ function spawnPickup(x, y, z, resourceType) {
 
 function addToInventory(inv, type, amount) {
     let remaining = amount;
-    // Fill existing stacks
     for (let i = 0; i < INVENTORY_SIZE; i++) {
         if (inv[i] && inv[i].type === type && inv[i].count < MAX_STACK) {
             const space = MAX_STACK - inv[i].count;
@@ -86,7 +84,6 @@ function addToInventory(inv, type, amount) {
             if (remaining === 0) return true;
         }
     }
-    // New stacks
     for (let i = 0; i < INVENTORY_SIZE; i++) {
         if (!inv[i]) {
             const add = Math.min(MAX_STACK, remaining);
@@ -111,7 +108,6 @@ function deductCurrency(currency, cost) {
     }
 }
 
-// Generate random player name
 function generatePlayerName() {
     const adjectives = ['Quick', 'Brave', 'Silent', 'Clever', 'Mighty', 'Swift', 'Wise', 'Fierce', 'Noble', 'Cunning'];
     const nouns = ['Fox', 'Wolf', 'Eagle', 'Bear', 'Lion', 'Tiger', 'Dragon', 'Phoenix', 'Shark', 'Panther'];
@@ -121,7 +117,6 @@ function generatePlayerName() {
     return `${adj}${noun}${num}`;
 }
 
-// Init world (islands + spawners)
 function createIsland(offsetX, offsetZ, spawnerType = null) {
     for (let x = 0; x < 6; x++) {
         for (let z = 0; z < 6; z++) {
@@ -170,7 +165,7 @@ function resetGame() {
     const initPickups = Array.from(pickups, ([id, data]) => ({ id, ...data }));
     let availableIslands = [...playerIslands];
     players.forEach((p, id) => {
-        if (p.spectator) return; // Don't reset spectators
+        if (p.spectator) return;
         
         p.inventory = new Array(INVENTORY_SIZE).fill(null);
         p.currency = { iron: 0, gold: 0, emerald: 0 };
@@ -203,7 +198,6 @@ function resetGame() {
     roundStartTime = null;
 }
 
-// Socket connections
 io.on('connection', (socket) => {
     console.log(`New connection: ${socket.id}`);
     const playerName = generatePlayerName();
@@ -295,16 +289,11 @@ io.on('connection', (socket) => {
 
     socket.on('playerUpdate', (data) => {
         const p = players.get(socket.id);
-        if (p && !p.spectator) {
+        if (p) {
             p.pos = data.pos;
             p.rot = data.rot;
             p.crouch = data.crouch;
             p.selected = data.selected;
-        } else if (p && p.spectator) {
-            // Spectators can still update position for others to see
-            p.pos = data.pos;
-            p.rot = data.rot;
-            p.crouch = data.crouch;
         }
     });
 
@@ -408,7 +397,6 @@ io.on('connection', (socket) => {
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
     });
 
-    // Chat message handler
     socket.on('chatMessage', (message) => {
         const p = players.get(socket.id);
         if (!message || message.trim() === '') return;
@@ -418,11 +406,11 @@ io.on('connection', (socket) => {
             sender: p.name,
             senderId: socket.id,
             message: message.trim(),
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            spectator: p.spectator
         };
         
         chatMessages.push(chatMsg);
-        // Keep only last 100 messages
         if (chatMessages.length > 100) {
             chatMessages.shift();
         }
@@ -430,7 +418,6 @@ io.on('connection', (socket) => {
         io.emit('chatMessage', chatMsg);
     });
 
-    // Spectator mode toggle
     socket.on('toggleSpectator', () => {
         const p = players.get(socket.id);
         p.spectator = !p.spectator;
@@ -457,7 +444,6 @@ io.on('connection', (socket) => {
             io.emit('chatMessage', specMsg);
         }
         
-        // Update all clients
         io.emit('playerSpectator', { id: socket.id, spectator: p.spectator });
     });
 
@@ -479,7 +465,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// Game loop (spawns + player sync)
 setInterval(() => {
     const now = Date.now();
     spawners.forEach((s) => {
@@ -500,9 +485,8 @@ setInterval(() => {
             suddenDeath = true;
         }
 
-        // Check for death/respawn
         players.forEach((p, id) => {
-            if (p.spectator) return; // Skip spectators
+            if (p.spectator) return;
             
             if (p.pos.y < -30 && now - p.lastRespawn > 2000) {
                 if (p.bedPos && blocks.get(blockKey(p.bedPos.x, p.bedPos.y, p.bedPos.z)) === 'Bed') {
@@ -514,7 +498,6 @@ setInterval(() => {
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
                 } else {
                     io.to(id).emit('notification', 'Eliminated! No bed. You can now spectate (Press P).');
-                    // Don't disconnect, let them spectate
                     p.spectator = true;
                     io.emit('playerSpectator', { id, spectator: true });
                     
@@ -531,7 +514,6 @@ setInterval(() => {
             }
         });
 
-        // Count only active players (not spectators)
         const activePlayers = Array.from(players.values()).filter(p => !p.spectator);
         if (activePlayers.length === 1) {
             const winnerId = Array.from(players.entries())
@@ -544,7 +526,6 @@ setInterval(() => {
         }
     }
 
-    // Sync all players (including spectators)
     const states = Array.from(players.entries()).map(([id, p]) => {
         return { 
             id, 
