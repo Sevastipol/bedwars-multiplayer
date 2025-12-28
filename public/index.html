@@ -1,4 +1,3 @@
-<!-- index.html (Updated with Chat and Spectator Mode) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -12,7 +11,6 @@
             user-select: none;
         }
 
-        /* Centered Crosshair */
         #crosshair {
             position: absolute;
             top: 50%;
@@ -27,7 +25,6 @@
             z-index: 10;
         }
 
-        /* Top Left Stats */
         #stats {
             position: absolute;
             top: 20px;
@@ -55,7 +52,6 @@
             image-rendering: pixelated;
         }
 
-        /* NEW: Spectator Indicator */
         #spectator-indicator {
             position: absolute;
             top: 20px;
@@ -72,7 +68,6 @@
             z-index: 15;
         }
 
-        /* Item Name Overlay (Minecraft Style) */
         #item-name-overlay {
             position: absolute;
             bottom: 100px;
@@ -88,7 +83,6 @@
             z-index: 15;
         }
 
-        /* Breaking Progress Bar */
         #break-progress {
             position: absolute;
             top: 50%;
@@ -110,7 +104,6 @@
             transition: width 0.1s linear;
         }
 
-        /* Inventory Hotbar */
         #hotbar-container {
             position: absolute;
             bottom: 20px;
@@ -160,7 +153,6 @@
             color: #aaa;
         }
 
-        /* Shop UI */
         #shop {
             position: absolute;
             top: 50%;
@@ -198,10 +190,6 @@
             border-color: #fff;
         }
 
-        .shop-item:active {
-            background: #444;
-        }
-
         .shop-item.disabled {
             opacity: 0.4;
             cursor: not-allowed;
@@ -228,7 +216,6 @@
             color: #ffff88 !important;
         }
 
-        /* NEW: Chat System */
         #chat-container {
             position: absolute;
             bottom: 120px;
@@ -287,12 +274,6 @@
             pointer-events: auto;
         }
 
-        #chat-input:focus {
-            outline: none;
-            border-color: #888;
-        }
-
-        /* Loading Screen for Cold Starts */
         #loading {
             position: absolute;
             top: 0;
@@ -355,7 +336,6 @@
     </div>
     <div id="item-name-overlay"></div>
     
-    <!-- NEW: Chat Container -->
     <div id="chat-container">
         <div id="chat-messages"></div>
         <input type="text" id="chat-input" placeholder="Type your message... (Press Enter to send, ESC to cancel)" />
@@ -385,13 +365,11 @@
 
         const socket = io({ reconnection: true, reconnectionAttempts: 10, reconnectionDelay: 1000 });
 
-        // --- NEW: Chat state ---
         let isChatting = false;
         let playerName = "Player";
         let isSpectator = false;
         let spectatorFlySpeed = 10.0;
 
-        // --- Config ---
         const BLOCK_TYPES = {
             'Grass': { color: 0x4d9043, cost: { iron: 5 }, breakTime: 1.2, buyAmount: 8, hasTexture: true },
             'Glass': { color: 0xade8f4, cost: { iron: 5 }, breakTime: 0.4, buyAmount: 16, opacity: 0.6 },
@@ -402,9 +380,7 @@
         };
         const MAX_STACK = 64;
         const INVENTORY_SIZE = 9;
-        const ISLAND_GAP = 18;
 
-        // --- State ---
         let currency = { iron: 0, gold: 0, emerald: 0 };
         let inventory = new Array(INVENTORY_SIZE).fill(null);
         let selectedSlotIndex = 0;
@@ -414,22 +390,19 @@
         const resourceSpawners = [];
         const resourcePickups = [];
 
-        // Breaking state
         let isBreaking = false;
         let breakingBlock = null;
         let breakingStartTime = 0;
         let breakingDuration = 0;
         let breakingOverlay = null;
 
-        // Crouching state
         let isCrouching = false;
 
         let playerId = null;
-        let blocksMeshes = new Map();  // key -> mesh
-        let pickupMeshes = new Map();  // id -> mesh
-        let otherPlayers = new Map();  // id -> {group, head, targetPos, targetRot, name, spectator}
+        let blocksMeshes = new Map();
+        let pickupMeshes = new Map();
+        let otherPlayers = new Map();
 
-        // --- Three.js Setup ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x6eb1ff);
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -441,7 +414,174 @@
         sun.position.set(20, 50, 20);
         scene.add(sun);
 
-        // --- NEW: Chat Functions ---
+        const textureLoader = new THREE.TextureLoader();
+        let grassTexture, woodTexture, stoneTexture, obsidianTexture;
+        let ironTexture, goldTexture, emeraldTexture;
+        let breakingTextures = [];
+
+        textureLoader.load('https://i.ibb.co/394nfmMz/pixilart-drawing-3.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            grassTexture = texture;
+        });
+
+        textureLoader.load('https://i.ibb.co/KpWBZRPS/pixilart-drawing-2.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            woodTexture = texture;
+        });
+
+        textureLoader.load('https://i.ibb.co/rGVR38xv/pixilart-drawing-5.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            stoneTexture = texture;
+        });
+
+        textureLoader.load('https://i.ibb.co/bRdZdGR2/pixilart-drawing-4.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            obsidianTexture = texture;
+        });
+
+        textureLoader.load('https://i.ibb.co/n87Ym7RY/pixilart-drawing-7.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            ironTexture = texture;
+        });
+
+        textureLoader.load('https://i.ibb.co/27GwzjkT/pixilart-drawing-6.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            goldTexture = texture;
+        });
+
+        textureLoader.load('https://i.ibb.co/hxX4ywxj/pixilart-drawing-8.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            emeraldTexture = texture;
+        });
+
+        const breakingTextureUrls = [
+            'https://i.ibb.co/hxcqsNSc/pixil-frame-0.png',
+            'https://i.ibb.co/9ms6601B/pixil-frame-0-1.png',
+            'https://i.ibb.co/Ng24qysY/pixil-frame-0-2.png',
+            'https://i.ibb.co/ccsc9WQg/pixil-frame-0-3.png',
+            'https://i.ibb.co/YBqh6x4w/pixil-frame-0-4.png',
+            'https://i.ibb.co/NnsSg1sL/pixil-frame-0-5.png',
+            'https://i.ibb.co/5HCS1DL/pixil-frame-0-6.png',
+            'https://i.ibb.co/PGxn1rDt/pixil-frame-0-7.png',
+            'https://i.ibb.co/4wfn1SFL/pixil-frame-0-8.png'
+        ];
+
+        breakingTextureUrls.forEach((url, i) => {
+            textureLoader.load(url, (texture) => {
+                texture.magFilter = THREE.NearestFilter;
+                texture.minFilter = THREE.NearestFilter;
+                breakingTextures[i] = texture;
+            });
+        });
+
+        function addBlockMesh(x, y, z, type) {
+            const blockData = BLOCK_TYPES[type];
+            let material;
+            
+            if (type === 'Grass' && grassTexture) {
+                material = new THREE.MeshLambertMaterial({ map: grassTexture });
+            } else if (type === 'Wood' && woodTexture) {
+                material = new THREE.MeshLambertMaterial({ map: woodTexture });
+            } else if (type === 'Stone' && stoneTexture) {
+                material = new THREE.MeshLambertMaterial({ map: stoneTexture });
+            } else if (type === 'Obsidian' && obsidianTexture) {
+                material = new THREE.MeshLambertMaterial({ map: obsidianTexture });
+            } else {
+                material = new THREE.MeshLambertMaterial({ 
+                    color: blockData.color, 
+                    transparent: !!blockData.opacity, 
+                    opacity: blockData.opacity || 1 
+                });
+            }
+            
+            const voxel = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
+            voxel.position.set(x + 0.5, y + 0.5, z + 0.5);
+            voxel.userData = { type: type };
+            scene.add(voxel);
+            blocksInScene.push(voxel);
+            const key = `${x},${y},${z}`;
+            blocksMeshes.set(key, voxel);
+            return voxel;
+        }
+
+        function removeBlockMesh(x, y, z) {
+            const key = `${x},${y},${z}`;
+            const mesh = blocksMeshes.get(key);
+            if (mesh) {
+                scene.remove(mesh);
+                const idx = blocksInScene.indexOf(mesh);
+                if (idx > -1) blocksInScene.splice(idx, 1);
+                blocksMeshes.delete(key);
+            }
+        }
+
+        function addResourceSpawner(x, y, z, resourceType, interval) {
+            const colors = { iron: 0xa0a0a0, gold: 0xffd700, emerald: 0x00ff88 };
+            const spawner = new THREE.Mesh(
+                new THREE.SphereGeometry(0.3, 16, 16),
+                new THREE.MeshStandardMaterial({
+                    color: colors[resourceType],
+                    emissive: colors[resourceType],
+                    emissiveIntensity: 0.5,
+                    metalness: 0.8,
+                    roughness: 0.2
+                })
+            );
+            spawner.position.set(x, y, z);
+            spawner.userData = { type: 'spawner', resourceType: resourceType, lastSpawn: Date.now(), interval: interval * 1000 };
+            scene.add(spawner);
+            resourceSpawners.push(spawner);
+        }
+
+        function addPickupMesh(data) {
+            const size = 0.6;
+            const geometry = new THREE.BoxGeometry(size, size, size);
+
+            let texture = null;
+            if (data.resourceType === 'iron') texture = ironTexture;
+            else if (data.resourceType === 'gold') texture = goldTexture;
+            else if (data.resourceType === 'emerald') texture = emeraldTexture;
+
+            const materials = [
+                new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.3 }),
+                new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.3 }),
+                new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 }),
+                new THREE.MeshBasicMaterial({ color: 0x444444, transparent: true, opacity: 0.3 }),
+                texture ? new THREE.MeshBasicMaterial({ map: texture, transparent: true }) : new THREE.MeshBasicMaterial({ color: 0x888888 }),
+                new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.3 })
+            ];
+
+            const pickup = new THREE.Mesh(geometry, materials);
+            pickup.position.set(data.x, data.y, data.z);
+            pickup.userData = { 
+                type: 'resource_pickup', 
+                resourceType: data.resourceType, 
+                spawnTime: Date.now(), 
+                baseY: data.y, 
+                id: data.id 
+            };
+            scene.add(pickup);
+            resourcePickups.push(pickup);
+            pickupMeshes.set(data.id, pickup);
+        }
+
+        function removePickupMesh(id) {
+            const mesh = pickupMeshes.get(id);
+            if (mesh) {
+                scene.remove(mesh);
+                const idx = resourcePickups.indexOf(mesh);
+                if (idx > -1) resourcePickups.splice(idx, 1);
+                pickupMeshes.delete(id);
+            }
+        }
+
         function showChatInput() {
             if (isChatting) return;
             isChatting = true;
@@ -478,7 +618,6 @@
             chatMessages.appendChild(messageDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
             
-            // Auto-hide after 10 seconds if not hovering
             setTimeout(() => {
                 if (!chatMessages.matches(':hover')) {
                     chatMessages.style.opacity = '0.3';
@@ -486,11 +625,6 @@
             }, 10000);
         }
 
-        function toggleSpectatorMode() {
-            socket.emit('toggleSpectator');
-        }
-
-        // --- Spectator Functions ---
         function setSpectatorMode(spectator) {
             isSpectator = spectator;
             const indicator = document.getElementById('spectator-indicator');
@@ -500,17 +634,14 @@
                 indicator.style.display = 'block';
                 velocity.y = 0;
                 onGround = false;
-                // Update controls hint for spectators
                 controlsHint.innerHTML = `
                     WASD: Move | SPACE/Q: Fly Up | SHIFT/E: Fly Down<br>
                     P: Toggle Spectator | T: Chat | ESC: Close Chat<br>
                     <span style="color: #ff9900">SPECTATOR MODE (No interaction)</span>
                 `;
-                // Unlock controls for spectators
                 controls.unlock();
             } else {
                 indicator.style.display = 'none';
-                // Reset controls hint
                 controlsHint.innerHTML = `
                     WASD: Move | SPACE: Jump<br>
                     <span id="crouch-hint">SHIFT: Crouch</span> | 1-9: Select<br>
@@ -522,9 +653,18 @@
             }
         }
 
-        // --- Event Listeners (Updated) ---
+        const PLAYER_HEIGHT = 1.8;
+        const EYE_HEIGHT = 1.6;
+        const CROUCH_HEIGHT = 1.3;
+        const PLAYER_RADIUS = 0.4;
+
+        camera.position.set(-12, 5, -12);
+        const controls = new PointerLockControls(camera, document.body);
+        const velocity = new THREE.Vector3();
+        const moveState = { fwd: false, bwd: false, l: false, r: false, up: false, down: false };
+        let onGround = false;
+
         document.addEventListener('keydown', (e) => {
-            // Chat input takes priority
             if (isChatting) {
                 if (e.code === 'Escape') {
                     hideChatInput();
@@ -532,20 +672,17 @@
                 return;
             }
 
-            // Spectator toggle
             if (e.code === 'KeyP') {
-                toggleSpectatorMode();
+                socket.emit('toggleSpectator');
                 return;
             }
 
-            // Chat activation
             if (e.code === 'KeyT') {
                 e.preventDefault();
                 showChatInput();
                 return;
             }
 
-            // Shop toggle
             if(e.code === 'KeyB') {
                 if (!isSpectator) toggleShop();
                 return;
@@ -553,7 +690,6 @@
 
             if(document.getElementById('shop').style.display === 'block') return;
 
-            // Slot selection
             if (e.code.startsWith('Digit') && e.code !== 'Digit0') {
                 const num = parseInt(e.key);
                 if (num >= 1 && num <= 9) {
@@ -561,7 +697,6 @@
                 }
             }
 
-            // Movement keys
             switch(e.code) {
                 case 'KeyW': moveState.fwd = true; break;
                 case 'KeyS': moveState.bwd = true; break;
@@ -569,13 +704,12 @@
                 case 'KeyD': moveState.r = true; break;
                 case 'Space':
                     if (isSpectator) {
-                        // Spectator fly up
                         moveState.up = true;
                     } else if(onGround && !isCrouching) {
                         velocity.y = 7.5;
                         onGround = false;
                     } else if (onGround && isCrouching) {
-                        velocity.y = 6.;
+                        velocity.y = 6;
                         onGround = false;
                     }
                     break;
@@ -583,7 +717,6 @@
                 case 'ShiftRight':
                     e.preventDefault();
                     if (isSpectator) {
-                        // Spectator fly down
                         moveState.down = true;
                     } else if (!isCrouching) {
                         isCrouching = true;
@@ -591,14 +724,10 @@
                     }
                     break;
                 case 'KeyQ':
-                    if (isSpectator) {
-                        moveState.up = true;
-                    }
+                    if (isSpectator) moveState.up = true;
                     break;
                 case 'KeyE':
-                    if (isSpectator) {
-                        moveState.down = true;
-                    }
+                    if (isSpectator) moveState.down = true;
                     break;
             }
         });
@@ -609,9 +738,7 @@
                 case 'KeyS': moveState.bwd = false; break;
                 case 'KeyA': moveState.l = false; break;
                 case 'KeyD': moveState.r = false; break;
-                case 'Space':
-                    if (isSpectator) moveState.up = false;
-                    break;
+                case 'Space': if (isSpectator) moveState.up = false; break;
                 case 'ShiftLeft':
                 case 'ShiftRight':
                     if (isSpectator) {
@@ -621,16 +748,11 @@
                         document.getElementById('crouch-hint').classList.remove('crouch-indicator');
                     }
                     break;
-                case 'KeyQ':
-                    if (isSpectator) moveState.up = false;
-                    break;
-                case 'KeyE':
-                    if (isSpectator) moveState.down = false;
-                    break;
+                case 'KeyQ': if (isSpectator) moveState.up = false; break;
+                case 'KeyE': if (isSpectator) moveState.down = false; break;
             }
         });
 
-        // Chat input event listener
         const chatInput = document.getElementById('chat-input');
         chatInput.addEventListener('keydown', (e) => {
             if (e.code === 'Enter') {
@@ -644,7 +766,6 @@
             }
         });
 
-        // Keep hover functionality for chat
         const chatMessagesDiv = document.getElementById('chat-messages');
         chatMessagesDiv.addEventListener('mouseenter', () => {
             chatMessagesDiv.style.opacity = '1';
@@ -658,30 +779,8 @@
             }, 2000);
         });
 
-        // --- Movement State (Updated for Spectator) ---
-        const moveState = { 
-            fwd: false, 
-            bwd: false, 
-            l: false, 
-            r: false,
-            up: false,    // Spectator fly up
-            down: false   // Spectator fly down
-        };
-
-        // --- Physics & Controls ---
-        const PLAYER_HEIGHT = 1.8;
-        const EYE_HEIGHT = 1.6;
-        const CROUCH_HEIGHT = 1.3;
-        const PLAYER_RADIUS = 0.4;
-
-        camera.position.set(-12, 5, -12);
-        const controls = new PointerLockControls(camera, document.body);
-        const velocity = new THREE.Vector3();
-        let onGround = false;
-
         const raycaster = new THREE.Raycaster();
 
-        // Mouse event handlers (with spectator check)
         document.addEventListener('mousedown', (e) => {
             if (isChatting) return;
             
@@ -690,13 +789,12 @@
                 return;
             }
 
-            // Don't allow interaction in spectator mode
             if (isSpectator) return;
 
             raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
             const intersects = raycaster.intersectObjects(blocksInScene);
 
-            if (e.button === 2) { // Build
+            if (e.button === 2) {
                 const currentSlot = inventory[selectedSlotIndex];
                 if (intersects.length > 0 && currentSlot && currentSlot.count > 0) {
                     const intersect = intersects[0];
@@ -728,7 +826,7 @@
                         socket.emit('placeAttempt', { x: blockX, y: blockY, z: blockZ, type });
                     }
                 }
-            } else if (e.button === 0) { // Break
+            } else if (e.button === 0) {
                 if (intersects.length > 0) {
                     const obj = intersects[0].object;
                     if (intersects[0].distance > 5) return;
@@ -759,9 +857,21 @@
             }
         });
 
-        // ... (rest of the original mouse event handlers remain the same)
+        document.addEventListener('mouseup', (e) => {
+            if (e.button === 0) {
+                isBreaking = false;
+                breakingBlock = null;
+                document.getElementById('break-progress').style.display = 'none';
+                document.getElementById('break-progress-bar').style.width = '0%';
+                if (breakingOverlay) {
+                    scene.remove(breakingOverlay);
+                    breakingOverlay = null;
+                }
+            }
+        });
 
-        // Collision check (skip for spectators)
+        document.addEventListener('contextmenu', (e) => e.preventDefault());
+
         function checkCollision(pos) {
             if (isSpectator) return false;
             
@@ -794,6 +904,8 @@
         }
 
         let prevTime = performance.now();
+        let lastPlayerUpdate = 0;
+        const PLAYER_UPDATE_RATE = 50;
 
         function animate() {
             requestAnimationFrame(animate);
@@ -801,10 +913,61 @@
             const delta = Math.min((time - prevTime) / 1000, 0.05);
             prevTime = time;
 
-            // Movement and physics (spectator vs player)
+            if (!isSpectator && isBreaking && breakingBlock) {
+                const elapsed = Date.now() - breakingStartTime;
+                const progress = Math.min((elapsed / breakingDuration) * 100, 100);
+                document.getElementById('break-progress-bar').style.width = progress + '%';
+
+                if (breakingOverlay && breakingTextures.length > 0) {
+                    const textureIndex = Math.floor(progress / 10) - 1;
+                    if (textureIndex >= 0 && textureIndex < breakingTextures.length) {
+                        breakingOverlay.material.map = breakingTextures[textureIndex];
+                        breakingOverlay.material.needsUpdate = true;
+                    }
+                }
+
+                if (elapsed >= breakingDuration) {
+                    const x = Math.floor(breakingBlock.position.x - 0.5);
+                    const y = Math.floor(breakingBlock.position.y - 0.5);
+                    const z = Math.floor(breakingBlock.position.z - 0.5);
+                    socket.emit('breakAttempt', { x, y, z });
+                    isBreaking = false;
+                    breakingBlock = null;
+                    document.getElementById('break-progress').style.display = 'none';
+                    document.getElementById('break-progress-bar').style.width = '0%';
+                    if (breakingOverlay) {
+                        scene.remove(breakingOverlay);
+                        breakingOverlay = null;
+                    }
+                }
+            }
+
+            const now = Date.now();
+
+            resourceSpawners.forEach(spawner => {
+                const pulseSpeed = 2;
+                const pulseAmount = 0.1;
+                const scale = 1 + Math.sin(now / 200 * pulseSpeed) * pulseAmount;
+                spawner.scale.set(scale, scale, scale);
+            });
+
+            for (let i = resourcePickups.length - 1; i >= 0; i--) {
+                const pickup = resourcePickups[i];
+                
+                const floatOffset = Math.sin((now - pickup.userData.spawnTime) / 500) * 0.15;
+                pickup.position.y = pickup.userData.baseY + floatOffset;
+                
+                pickup.lookAt(camera.position);
+
+                const dist = camera.position.distanceTo(pickup.position);
+                if (dist < 1.5) {
+                    socket.emit('claimPickupAttempt', pickup.userData.id);
+                    removePickupMesh(pickup.userData.id);
+                }
+            }
+
             if (controls.isLocked || isSpectator) {
                 if (isSpectator) {
-                    // Spectator flying movement
                     velocity.y = 0;
                     
                     const direction = new THREE.Vector3();
@@ -832,7 +995,6 @@
                     }
                     
                 } else {
-                    // Normal player movement (original code)
                     velocity.y -= 20.0 * delta;
 
                     const direction = new THREE.Vector3();
@@ -887,37 +1049,6 @@
                 }
             }
 
-            // Breaking logic (skip for spectators)
-            if (!isSpectator && isBreaking && breakingBlock) {
-                const elapsed = Date.now() - breakingStartTime;
-                const progress = Math.min((elapsed / breakingDuration) * 100, 100);
-                document.getElementById('break-progress-bar').style.width = progress + '%';
-
-                if (breakingOverlay && breakingTextures.length > 0) {
-                    const textureIndex = Math.floor(progress / 10) - 1;
-                    if (textureIndex >= 0 && textureIndex < breakingTextures.length) {
-                        breakingOverlay.material.map = breakingTextures[textureIndex];
-                        breakingOverlay.material.needsUpdate = true;
-                    }
-                }
-
-                if (elapsed >= breakingDuration) {
-                    const x = Math.floor(breakingBlock.position.x - 0.5);
-                    const y = Math.floor(breakingBlock.position.y - 0.5);
-                    const z = Math.floor(breakingBlock.position.z - 0.5);
-                    socket.emit('breakAttempt', { x, y, z });
-                    isBreaking = false;
-                    breakingBlock = null;
-                    document.getElementById('break-progress').style.display = 'none';
-                    document.getElementById('break-progress-bar').style.width = '0%';
-                    if (breakingOverlay) {
-                        scene.remove(breakingOverlay);
-                        breakingOverlay = null;
-                    }
-                }
-            }
-
-            // Player update send (for both players and spectators)
             if ((controls.isLocked || isSpectator) && socket.connected && time - lastPlayerUpdate > PLAYER_UPDATE_RATE) {
                 socket.emit('playerUpdate', {
                     pos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
@@ -928,21 +1059,18 @@
                 lastPlayerUpdate = time;
             }
 
-            // Other players lerp
             otherPlayers.forEach((data) => {
                 data.group.position.lerp(new THREE.Vector3(data.targetPos.x, data.targetPos.y, data.targetPos.z), 0.15);
                 data.group.rotation.y = THREE.MathUtils.lerp(data.group.rotation.y || 0, data.targetRot.yaw, 0.15);
                 data.head.rotation.x = THREE.MathUtils.lerp(data.head.rotation.x || 0, data.targetRot.pitch, 0.15);
                 
-                // Crouch
                 if (data.targetCrouch !== data.crouch) {
                     data.crouch = data.targetCrouch;
                 }
                 data.group.scale.y = data.crouch ? 0.75 : 1;
                 
-                // Spectator transparency
                 if (data.targetSpectator) {
-                    data.group.visible = false; // Hide spectator avatars
+                    data.group.visible = false;
                 } else {
                     data.group.visible = true;
                 }
@@ -951,9 +1079,142 @@
             renderer.render(scene, camera);
         }
 
-        // ... (rest of the original code for textures, world generation, etc. remains the same)
+        function addToInventory(blockType, amount) {
+            for (let i = 0; i < INVENTORY_SIZE; i++) {
+                if (inventory[i] && inventory[i].type === blockType && inventory[i].count < MAX_STACK) {
+                    const space = MAX_STACK - inventory[i].count;
+                    const toAdd = Math.min(space, amount);
+                    inventory[i].count += toAdd;
+                    amount -= toAdd;
+                    if (amount === 0) {
+                        updateUI();
+                        return true;
+                    }
+                }
+            }
+            if (amount > 0) {
+                for (let i = 0; i < INVENTORY_SIZE; i++) {
+                    if (inventory[i] === null) {
+                        const toAdd = Math.min(MAX_STACK, amount);
+                        inventory[i] = { type: blockType, count: toAdd };
+                        amount -= toAdd;
+                        if (amount === 0) {
+                            updateUI();
+                            return true;
+                        }
+                    }
+                }
+            }
+            updateUI();
+            return amount === 0;
+        }
 
-        // --- Updated Player Creation (with names) ---
+        function selectSlot(index) {
+            selectedSlotIndex = index;
+            updateUI();
+            const slot = inventory[selectedSlotIndex];
+            const overlay = document.getElementById('item-name-overlay');
+            if (slot) {
+                overlay.innerText = slot.type;
+                overlay.style.opacity = '1';
+                overlay.style.color = '#' + BLOCK_TYPES[slot.type].color.toString(16).padStart(6, '0');
+                if (overlayTimeout) clearTimeout(overlayTimeout);
+                overlayTimeout = setTimeout(() => { overlay.style.opacity = '0'; }, 2000);
+            } else {
+                overlay.style.opacity = '0';
+            }
+        }
+
+        const hotbarContainer = document.getElementById('hotbar-container');
+
+        function updateUI() {
+            document.getElementById('iron').innerText = currency.iron;
+            document.getElementById('gold').innerText = currency.gold;
+            document.getElementById('emerald').innerText = currency.emerald;
+
+            hotbarContainer.innerHTML = '';
+            for (let i = 0; i < INVENTORY_SIZE; i++) {
+                const slot = inventory[i];
+                const div = document.createElement('div');
+                div.className = `inv-slot ${i === selectedSlotIndex ? 'active' : ''}`;
+                div.onclick = () => selectSlot(i);
+
+                const keyHint = document.createElement('span');
+                keyHint.className = 'slot-key';
+                keyHint.innerText = i + 1;
+                div.appendChild(keyHint);
+
+                if (slot) {
+                    const blockData = BLOCK_TYPES[slot.type];
+                    if (blockData.hasTexture) {
+                        const icon = document.createElement('img');
+                        icon.className = 'block-icon';
+                        if (slot.type === 'Grass') icon.src = 'https://i.ibb.co/394nfmMz/pixilart-drawing-3.png';
+                        else if (slot.type === 'Wood') icon.src = 'https://i.ibb.co/KpWBZRPS/pixilart-drawing-2.png';
+                        else if (slot.type === 'Stone') icon.src = 'https://i.ibb.co/rGVR38xv/pixilart-drawing-5.png';
+                        else if (slot.type === 'Obsidian') icon.src = 'https://i.ibb.co/bRdZdGR2/pixilart-drawing-4.png';
+                        div.appendChild(icon);
+                    } else {
+                        const icon = document.createElement('div');
+                        icon.className = 'block-icon';
+                        icon.style.backgroundColor = '#' + blockData.color.toString(16).padStart(6, '0');
+                        if(blockData.opacity) icon.style.opacity = blockData.opacity;
+                        div.appendChild(icon);
+                    }
+
+                    const count = document.createElement('span');
+                    count.className = 'slot-count';
+                    count.innerText = slot.count;
+                    div.appendChild(count);
+                }
+
+                hotbarContainer.appendChild(div);
+            }
+        }
+
+        function canAfford(cost) {
+            for (let [resource, amount] of Object.entries(cost)) {
+                if (currency[resource] < amount) return false;
+            }
+            return true;
+        }
+
+        function deductCurrency(cost) {
+            for (let [resource, amount] of Object.entries(cost)) {
+                currency[resource] -= amount;
+            }
+        }
+
+        function renderShop() {
+            const container = document.getElementById('shop-container');
+            container.innerHTML = '';
+            Object.entries(BLOCK_TYPES).filter(([name]) => name !== 'Bed').forEach(([name, data]) => {
+                const item = document.createElement('div');
+                const affordable = canAfford(data.cost);
+                item.className = `shop-item ${affordable ? '' : 'disabled'}`;
+                const costText = Object.entries(data.cost)
+                    .map(([res, amt]) => `${amt} ${res}`)
+                    .join(' + ');
+                item.innerHTML = `
+                    <div style="width:20px; height:20px; background:#${data.color.toString(16).padStart(6,'0')}; margin:0 auto 5px; border:1px solid #666;"></div>
+                    <strong>${name}</strong><br>
+                    <span style="font-size:0.9em; color:#aaa;">${data.buyAmount}x</span><br>
+                    <span style="color: ${affordable ? '#4d9043' : '#d32f2f'}">${costText}</span>
+                `;
+                item.onclick = () => {
+                    socket.emit('buyAttempt', name);
+                };
+                container.appendChild(item);
+            });
+        }
+
+        function toggleShop() {
+            const shop = document.getElementById('shop');
+            const isVisible = shop.style.display === 'block';
+            shop.style.display = isVisible ? 'none' : 'block';
+            isVisible ? controls.lock() : (renderShop(), controls.unlock());
+        }
+
         function getPlayerColor(id) {
             let hash = 0;
             for (let i = 0; i < id.length; i++) {
@@ -964,23 +1225,32 @@
             return color;
         }
 
-        function createOtherPlayer(id, name, isSpectator) {
+        function createOtherPlayer(id, name, isSpectatorPlayer) {
             const group = new THREE.Group();
             group.name = id;
             
-            if (isSpectator) {
+            if (isSpectatorPlayer) {
                 group.visible = false;
-                return group;
+                otherPlayers.set(id, {
+                    group,
+                    head: null,
+                    targetPos: { x: 0, y: 0, z: 0 },
+                    targetRot: { yaw: 0, pitch: 0 },
+                    targetCrouch: false,
+                    targetSpectator: isSpectatorPlayer,
+                    crouch: false,
+                    spectator: isSpectatorPlayer
+                });
+                scene.add(group);
+                return;
             }
 
-            // Head
             const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
             const headMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
             const head = new THREE.Mesh(headGeo, headMat);
             head.position.y = 1.4;
             group.add(head);
 
-            // Body
             const bodyGeo = new THREE.BoxGeometry(0.6, 0.8, 0.3);
             const bodyColor = getPlayerColor(id);
             const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
@@ -988,7 +1258,6 @@
             body.position.y = 0.7;
             group.add(body);
 
-            // Arms
             const armGeo = new THREE.BoxGeometry(0.25, 0.8, 0.25);
             const armMat = bodyMat;
             const leftArm = new THREE.Mesh(armGeo, armMat);
@@ -999,7 +1268,6 @@
             rightArm.position.set(-0.5, 0.7, 0);
             group.add(rightArm);
 
-            // Legs
             const legGeo = new THREE.BoxGeometry(0.3, 0.8, 0.3);
             const legMat = new THREE.MeshLambertMaterial({ color: 0x333366 });
             const leftLeg = new THREE.Mesh(legGeo, legMat);
@@ -1010,7 +1278,6 @@
             rightLeg.position.set(-0.2, 0, 0);
             group.add(rightLeg);
 
-            // Name tag
             const canvas = document.createElement('canvas');
             canvas.width = 256;
             canvas.height = 64;
@@ -1037,13 +1304,21 @@
                 targetPos: { x: 0, y: 0, z: 0 },
                 targetRot: { yaw: 0, pitch: 0 },
                 targetCrouch: false,
-                targetSpectator: isSpectator,
+                targetSpectator: isSpectatorPlayer,
                 crouch: false,
-                spectator: isSpectator
+                spectator: isSpectatorPlayer
             });
         }
 
-        // --- Socket Events (Updated) ---
+        function showNotification(msg, duration = 3000) {
+            const el = document.getElementById('notification');
+            el.innerText = msg;
+            el.style.display = 'block';
+            setTimeout(() => {
+                el.style.display = 'none';
+            }, duration);
+        }
+
         socket.on('connect', () => {
             document.getElementById('loading').style.display = 'none';
         });
@@ -1059,13 +1334,18 @@
 
         socket.on('chatHistory', (messages) => {
             messages.forEach(msg => {
-                addChatMessage(msg.sender, msg.message, msg.type, false);
+                addChatMessage(msg.sender, msg.message, msg.type, msg.spectator);
             });
         });
 
         socket.on('chatMessage', (msg) => {
-            const isSpectatorSender = players.get(msg.senderId)?.spectator || false;
-            addChatMessage(msg.sender, msg.message, msg.type, isSpectatorSender);
+            addChatMessage(msg.sender, msg.message, msg.type, msg.spectator);
+        });
+
+        socket.on('initWorld', ({ blocks, pickups, spawners: initSpawners }) => {
+            blocks.forEach(({ x, y, z, type }) => addBlockMesh(x, y, z, type));
+            pickups.forEach(addPickupMesh);
+            initSpawners.forEach(s => addResourceSpawner(s.x, s.y, s.z, s.resourceType, s.interval / 1000));
         });
 
         socket.on('playersSnapshot', (others) => {
@@ -1120,9 +1400,95 @@
             }
         });
 
-        // ... (rest of the original socket events remain the same)
+        socket.on('addBlock', ({ x, y, z, type }) => addBlockMesh(x, y, z, type));
+        socket.on('removeBlock', ({ x, y, z }) => removeBlockMesh(x, y, z));
+        socket.on('addPickup', addPickupMesh);
+        socket.on('removePickup', (id) => removePickupMesh(id));
 
-        // Initialize
+        socket.on('revertBreak', ({ x, y, z, type }) => {
+            if (type) addBlockMesh(x, y, z, type);
+            else removeBlockMesh(x, y, z);
+        });
+        socket.on('revertPlace', ({ x, y, z }) => removeBlockMesh(x, y, z));
+        socket.on('revertPickup', addPickupMesh);
+
+        socket.on('updateCurrency', (curr) => {
+            currency = curr;
+            updateUI();
+        });
+        socket.on('updateInventory', (inv) => {
+            inventory = inv;
+            updateUI();
+        });
+        socket.on('buyFailed', () => {
+            showNotification('Not enough resources or inventory full!');
+            renderShop();
+        });
+
+        socket.on('removePlayer', (id) => {
+            const op = otherPlayers.get(id);
+            if (op) {
+                scene.remove(op.group);
+                otherPlayers.delete(id);
+            }
+        });
+
+        socket.on('respawn', (data) => {
+            camera.position.set(data.pos.x, data.pos.y, data.pos.z);
+            camera.rotation.set(data.rot.pitch, data.rot.yaw, 0);
+            velocity.set(0, 0, 0);
+        });
+
+        socket.on('bedDestroyed', () => {
+            showNotification('Your bed was destroyed!');
+        });
+
+        socket.on('notification', (msg) => {
+            showNotification(msg);
+        });
+
+        socket.on('countdown', (sec) => {
+            showNotification(`Starting in ${sec}`, 1100);
+        });
+
+        socket.on('gameStart', () => {
+            showNotification('GO!');
+        });
+
+        socket.on('gameEnd', ({ winner, winnerName }) => {
+            if (winner === playerId) {
+                showNotification('You Win!', 5000);
+            } else {
+                showNotification(`${winnerName} Wins!`, 5000);
+            }
+        });
+
+        socket.on('worldReset', (data) => {
+            blocksInScene.forEach((m) => scene.remove(m));
+            blocksInScene.length = 0;
+            blocksMeshes.clear();
+            resourcePickups.forEach((m) => scene.remove(m));
+            resourcePickups.length = 0;
+            pickupMeshes.clear();
+            resourceSpawners.forEach((m) => scene.remove(m));
+            resourceSpawners.length = 0;
+            data.blocks.forEach(({ x, y, z, type }) => addBlockMesh(x, y, z, type));
+            data.pickups.forEach(addPickupMesh);
+            data.spawners.forEach((s) => addResourceSpawner(s.x, s.y, s.z, s.resourceType, s.interval / 1000));
+        });
+
+        socket.on('playerReset', (data) => {
+            camera.position.set(data.pos.x, data.pos.y, data.pos.z);
+            camera.rotation.set(data.rot.pitch, data.rot.yaw, 0);
+            inventory = data.inventory;
+            currency = data.currency;
+            updateUI();
+            velocity.set(0, 0, 0);
+            if (data.spectator !== undefined) {
+                setSpectatorMode(data.spectator);
+            }
+        });
+
         selectSlot(0);
         updateUI();
         animate();
