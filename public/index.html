@@ -30,8 +30,7 @@
         #timer {
             position: absolute;
             top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
+            left: 20px;
             color: white;
             background: rgba(0,0,0,0.7);
             padding: 10px 20px;
@@ -297,13 +296,13 @@
     </style>
 </head>
 <body>
-    <!-- NEW: Timer Display -->
+    <!-- Timer Display -->
     <div id="timer">15:00</div>
     
-    <!-- NEW: Spectator Indicator -->
+    <!-- Spectator Indicator -->
     <div id="spectator-indicator">SPECTATOR MODE</div>
     
-    <!-- NEW: Waiting Message -->
+    <!-- Waiting Message -->
     <div id="waiting-message"></div>
     
     <!-- Existing elements -->
@@ -363,8 +362,8 @@
             document.getElementById('loading').style.display = 'none';
         });
 
-        // --- NEW: Game State ---
-        let isSpectator = false;
+        // --- Game State ---
+        let isSpectator = true; // Start as spectator
         let roundTimeRemaining = 900;
         let roundTimerInterval = null;
         let isInRound = false;
@@ -407,7 +406,7 @@
         let pickupMeshes = new Map();
         let otherPlayers = new Map();
 
-        // --- NEW: Timer Functions ---
+        // --- Timer Functions ---
         function updateTimerDisplay(seconds) {
             const timerElement = document.getElementById('timer');
             const mins = Math.floor(seconds / 60);
@@ -443,7 +442,7 @@
             document.getElementById('timer').style.display = 'none';
         }
 
-        // --- NEW: Spectator Functions ---
+        // --- Spectator Functions ---
         function setSpectatorMode(spectator) {
             isSpectator = spectator;
             const indicator = document.getElementById('spectator-indicator');
@@ -455,6 +454,7 @@
                 document.getElementById('crosshair').style.display = 'none';
                 document.getElementById('controls-hint').style.display = 'none';
                 document.getElementById('break-progress').style.display = 'none';
+                document.getElementById('timer').style.display = 'none';
                 velocity.y = 0;
                 onGround = true;
             } else {
@@ -463,10 +463,13 @@
                 document.getElementById('hotbar-container').style.display = 'flex';
                 document.getElementById('crosshair').style.display = 'block';
                 document.getElementById('controls-hint').style.display = 'block';
+                if (isInRound) {
+                    document.getElementById('timer').style.display = 'block';
+                }
             }
         }
 
-        // --- NEW: Waiting Message Function ---
+        // --- Waiting Message Function ---
         function updateWaitingMessage(playersNeeded) {
             const messageElement = document.getElementById('waiting-message');
             if (playersNeeded > 0) {
@@ -1315,6 +1318,8 @@
         // Socket events
         socket.on('yourId', (id) => {
             playerId = id;
+            // Start as spectator
+            setSpectatorMode(true);
         });
 
         socket.on('initWorld', ({ blocks, pickups, spawners: initSpawners, gameState: serverGameState, playersNeeded }) => {
@@ -1427,6 +1432,22 @@
             startRoundTimer(900);
         });
 
+        socket.on('assignBed', (data) => {
+            // Player gets assigned a bed and becomes active player
+            showNotification(`Assigned to Iron Island!`, 3000);
+            setSpectatorMode(false);
+            
+            // Teleport to assigned island
+            camera.position.set(data.pos.x, data.pos.y, data.pos.z);
+            camera.rotation.set(data.rot.pitch, data.rot.yaw, 0);
+            velocity.set(0, 0, 0);
+            
+            // Update inventory and currency
+            inventory = data.inventory;
+            currency = data.currency;
+            updateUI();
+        });
+
         socket.on('gameEnd', ({ winner }) => {
             if (winner === playerId) {
                 showNotification('You Win!', 5000);
@@ -1435,6 +1456,7 @@
             }
             isInRound = false;
             stopRoundTimer();
+            setSpectatorMode(true); // Become spectator after game ends
         });
 
         socket.on('worldReset', (data) => {
@@ -1449,6 +1471,9 @@
             data.blocks.forEach(({ x, y, z, type }) => addBlockMesh(x, y, z, type));
             data.pickups.forEach(addPickupMesh);
             data.spawners.forEach((s) => addResourceSpawner(s.x, s.y, s.z, s.resourceType, s.interval / 1000));
+            
+            // Reset to spectator mode after world reset
+            setSpectatorMode(true);
         });
 
         socket.on('playerReset', (data) => {
@@ -1479,7 +1504,8 @@
             }
         });
 
-        selectSlot(0);
+        // Start as spectator
+        setSpectatorMode(true);
         updateUI();
         animate();
 
