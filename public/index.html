@@ -293,6 +293,24 @@
             z-index: 20;
             pointer-events: none;
         }
+
+        /* Spawner Label */
+        .spawner-label {
+            position: absolute;
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.5);
+            padding: 2px 6px;
+            border-radius: 4px;
+            pointer-events: none;
+            z-index: 5;
+            text-align: center;
+            min-width: 60px;
+            transform: translate(-50%, -50%);
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -327,7 +345,10 @@
         <span id="crouch-hint">SHIFT: Crouch</span> | 1-9: Select<br>
         B: Shop<br>
         <span style="color: #ff8888">Hold L-Click: Break</span><br>
-        <span style="color: #88ff88">R-Click: Build</span>
+        <span style="color: #88ff88">R-Click: Build</span><br>
+        <span style="color: #8888ff; display: none;" id="spectator-controls-hint">
+            SPECTATOR: SPACE: Fly Up | CTRL/SHIFT: Fly Down
+        </span>
     </div>
     <div id="break-progress">
         <div id="break-progress-bar"></div>
@@ -406,6 +427,10 @@
         let pickupMeshes = new Map();
         let otherPlayers = new Map();
 
+        // Spawner tracking
+        let spawnerLabels = new Map();
+        let spawnerPositions = new Map();
+
         // --- Timer Functions ---
         function updateTimerDisplay(seconds) {
             const timerElement = document.getElementById('timer');
@@ -446,19 +471,22 @@
         function setSpectatorMode(spectator) {
             isSpectator = spectator;
             const indicator = document.getElementById('spectator-indicator');
+            const spectatorHint = document.getElementById('spectator-controls-hint');
             
             if (spectator) {
                 indicator.style.display = 'block';
+                spectatorHint.style.display = 'block';
                 document.getElementById('stats').style.display = 'none';
                 document.getElementById('hotbar-container').style.display = 'none';
                 document.getElementById('crosshair').style.display = 'none';
-                document.getElementById('controls-hint').style.display = 'none';
+                document.getElementById('controls-hint').style.display = 'block';
                 document.getElementById('break-progress').style.display = 'none';
                 document.getElementById('timer').style.display = 'none';
                 velocity.y = 0;
                 onGround = true;
             } else {
                 indicator.style.display = 'none';
+                spectatorHint.style.display = 'none';
                 document.getElementById('stats').style.display = 'block';
                 document.getElementById('hotbar-container').style.display = 'flex';
                 document.getElementById('crosshair').style.display = 'block';
@@ -478,6 +506,53 @@
             } else {
                 messageElement.style.display = 'none';
             }
+        }
+
+        // --- Spawner Label Functions ---
+        function createSpawnerLabel(spawner) {
+            // Remove existing label if it exists
+            const existingLabel = spawnerLabels.get(spawner.id);
+            if (existingLabel) {
+                existingLabel.remove();
+            }
+            
+            // Create a new label element
+            const label = document.createElement('div');
+            label.className = 'spawner-label';
+            label.id = `spawner-${spawner.id}`;
+            label.textContent = `${spawner.resourceType}: ${spawner.totalCollected}`;
+            
+            // Set color based on resource type
+            if (spawner.resourceType === 'iron') label.style.color = '#a0a0a0';
+            else if (spawner.resourceType === 'gold') label.style.color = '#ffd700';
+            else if (spawner.resourceType === 'emerald') label.style.color = '#00ff88';
+            
+            document.body.appendChild(label);
+            spawnerLabels.set(spawner.id, label);
+            
+            return label;
+        }
+
+        function updateSpawnerLabelPositions() {
+            spawnerLabels.forEach((label, spawnerId) => {
+                const spawnerPos = spawnerPositions.get(spawnerId);
+                if (spawnerPos) {
+                    const vector = new THREE.Vector3(spawnerPos.x, spawnerPos.y + 2, spawnerPos.z);
+                    vector.project(camera);
+                    
+                    const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                    const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+                    
+                    // Only show label if it's in front of the camera and within a reasonable distance
+                    if (vector.z < 1 && vector.z > -1) {
+                        label.style.display = 'block';
+                        label.style.left = `${x}px`;
+                        label.style.top = `${y}px`;
+                    } else {
+                        label.style.display = 'none';
+                    }
+                }
+            });
         }
 
         // --- Three.js Setup ---
@@ -694,9 +769,19 @@
                     case 'KeyS': moveState.bwd = true; break;
                     case 'KeyA': moveState.l = true; break;
                     case 'KeyD': moveState.r = true; break;
-                    case 'Space': velocity.y = 5; break;
+                    case 'Space': 
+                        e.preventDefault();
+                        velocity.y = 5;
+                        break;
+                    case 'ControlLeft':
+                    case 'ControlRight':
+                        e.preventDefault();
+                        velocity.y = -5;
+                        break;
                     case 'ShiftLeft':
-                    case 'ShiftRight': velocity.y = -5; break;
+                    case 'ShiftRight':
+                        velocity.y = -5;
+                        break;
                 }
                 return;
             }
@@ -744,8 +829,12 @@
                     case 'KeyA': moveState.l = false; break;
                     case 'KeyD': moveState.r = false; break;
                     case 'Space':
+                    case 'ControlLeft':
+                    case 'ControlRight':
                     case 'ShiftLeft':
-                    case 'ShiftRight': velocity.y = 0; break;
+                    case 'ShiftRight':
+                        velocity.y = 0;
+                        break;
                 }
                 return;
             }
@@ -895,6 +984,11 @@
             const delta = Math.min((time - prevTime) / 1000, 0.05);
             prevTime = time;
 
+            // Update spawner labels
+            if (spawnerLabels.size > 0) {
+                updateSpawnerLabelPositions();
+            }
+
             // Breaking logic
             if (isBreaking && breakingBlock && !isSpectator) {
                 const elapsed = Date.now() - breakingStartTime;
@@ -975,8 +1069,9 @@
                         controls.moveForward(direction.z * speed * delta);
                     }
                     
+                    // Spectator vertical movement
                     camera.position.y += velocity.y * delta;
-                    velocity.y = 0;
+                    
                     onGround = true;
                 } else {
                     velocity.y -= 20.0 * delta;
@@ -1318,7 +1413,6 @@
         // Socket events
         socket.on('yourId', (id) => {
             playerId = id;
-            // Start as spectator
             setSpectatorMode(true);
         });
 
@@ -1330,6 +1424,13 @@
             if (serverGameState === 'waiting') {
                 updateWaitingMessage(playersNeeded);
             }
+        });
+
+        socket.on('initSpawners', (spawnerData) => {
+            spawnerData.forEach(spawner => {
+                spawnerPositions.set(spawner.id, { x: spawner.x, y: spawner.y, z: spawner.z });
+                createSpawnerLabel(spawner);
+            });
         });
 
         socket.on('playersSnapshot', (others) => {
@@ -1433,16 +1534,13 @@
         });
 
         socket.on('assignBed', (data) => {
-            // Player gets assigned a bed and becomes active player
             showNotification(`Assigned to Iron Island!`, 3000);
             setSpectatorMode(false);
             
-            // Teleport to assigned island
             camera.position.set(data.pos.x, data.pos.y, data.pos.z);
             camera.rotation.set(data.rot.pitch, data.rot.yaw, 0);
             velocity.set(0, 0, 0);
             
-            // Update inventory and currency
             inventory = data.inventory;
             currency = data.currency;
             updateUI();
@@ -1456,7 +1554,7 @@
             }
             isInRound = false;
             stopRoundTimer();
-            setSpectatorMode(true); // Become spectator after game ends
+            setSpectatorMode(true);
         });
 
         socket.on('worldReset', (data) => {
@@ -1468,11 +1566,15 @@
             pickupMeshes.clear();
             resourceSpawners.forEach((m) => scene.remove(m));
             resourceSpawners.length = 0;
+            
             data.blocks.forEach(({ x, y, z, type }) => addBlockMesh(x, y, z, type));
             data.pickups.forEach(addPickupMesh);
             data.spawners.forEach((s) => addResourceSpawner(s.x, s.y, s.z, s.resourceType, s.interval / 1000));
             
-            // Reset to spectator mode after world reset
+            spawnerLabels.forEach(label => label.remove());
+            spawnerLabels.clear();
+            spawnerPositions.clear();
+            
             setSpectatorMode(true);
         });
 
@@ -1502,6 +1604,26 @@
             } else {
                 document.getElementById('timer').style.display = 'none';
             }
+        });
+
+        socket.on('updateSpawner', (spawnerData) => {
+            const label = spawnerLabels.get(spawnerData.id);
+            if (label) {
+                label.textContent = `${spawnerData.resourceType}: ${spawnerData.totalCollected}`;
+            } else {
+                createSpawnerLabel(spawnerData);
+            }
+        });
+
+        socket.on('updateAllSpawners', (spawnerData) => {
+            spawnerLabels.forEach(label => label.remove());
+            spawnerLabels.clear();
+            spawnerPositions.clear();
+            
+            spawnerData.forEach(spawner => {
+                spawnerPositions.set(spawner.id, { x: spawner.x, y: spawner.y, z: spawner.z });
+                createSpawnerLabel(spawner);
+            });
         });
 
         // Start as spectator
