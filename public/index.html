@@ -37,6 +37,7 @@
             padding: 15px;
             border-radius: 10px;
             pointer-events: none;
+            transition: opacity 0.3s;
         }
 
         .currency-row {
@@ -104,6 +105,7 @@
             background: rgba(0, 0, 0, 0.3);
             padding: 10px;
             border-radius: 8px;
+            transition: opacity 0.3s;
         }
 
         .inv-slot {
@@ -205,6 +207,10 @@
             font-size: 12px;
             text-align: right;
             text-shadow: 1px 1px 2px black;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 8px;
+            transition: opacity 0.3s;
         }
 
         .crouch-indicator {
@@ -241,6 +247,57 @@
             display: none;
             z-index: 15;
         }
+
+        /* Timer at top right corner */
+        #round-timer {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.5);
+            padding: 10px 20px;
+            border-radius: 10px;
+            pointer-events: none;
+            z-index: 15;
+        }
+
+        /* Waiting text */
+        #waiting-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 32px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.7);
+            padding: 20px 40px;
+            border-radius: 15px;
+            display: none;
+            pointer-events: none;
+            z-index: 15;
+        }
+
+        /* Spectator indicator */
+        #spectator-indicator {
+            position: absolute;
+            top: 60px;
+            right: 20px;
+            color: #ff8888;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.5);
+            padding: 8px 15px;
+            border-radius: 8px;
+            display: none;
+            pointer-events: none;
+            z-index: 15;
+        }
     </style>
 </head>
 <body>
@@ -260,6 +317,8 @@
             <span id="emerald">0</span>
         </div>
     </div>
+    <div id="round-timer">15:00</div>
+    <div id="spectator-indicator">SPECTATOR MODE</div>
     <div id="controls-hint">
         WASD: Move | SPACE: Jump<br>
         <span id="crouch-hint">SHIFT: Crouch</span> | 1-9: Select<br>
@@ -272,6 +331,7 @@
     </div>
     <div id="item-name-overlay"></div>
     <div id="hotbar-container"></div>
+    <div id="waiting-text">Waiting for 1 more player...</div>
     <div id="shop">
         <h2>Construction Shop</h2>
         <div style="color: #aaa; font-size: 0.9em; margin-bottom: 10px;">Click to buy blocks</div>
@@ -293,7 +353,7 @@
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
-        const socket = io({ reconnection: true, reconnectionAttempts: 10, reconnectionDelay: 1000 });  // Updated with reconnection
+        const socket = io({ reconnection: true, reconnectionAttempts: 10, reconnectionDelay: 1000 });
 
         // Hide loading when connected
         socket.on('connect', () => {
@@ -332,6 +392,18 @@
 
         // Crouching state
         let isCrouching = false;
+
+        // Spectator state
+        let isSpectator = false;
+        let spectatorMode = false;
+        let roundTimeRemaining = 15 * 60; // 15 minutes in seconds
+        let roundTimerInterval = null;
+
+        // Movement state
+        const moveState = { 
+            fwd: false, bwd: false, l: false, r: false,
+            up: false, down: false  // For spectator mode
+        };
 
         let playerId = null;
         let blocksMeshes = new Map();  // key -> mesh (for fast remove)
@@ -411,7 +483,7 @@
             emeraldTexture = texture;
         });
 
-        // Load breaking textures (unchanged)
+        // Load breaking textures
         const breakingTextureUrls = [
             'https://i.ibb.co/hxcqsNSc/pixil-frame-0.png',
             'https://i.ibb.co/9ms6601B/pixil-frame-0-1.png',
@@ -453,7 +525,11 @@
             } else if (type === 'Obsidian' && obsidianTexture) {
                 material = new THREE.MeshLambertMaterial({ map: obsidianTexture });
             } else {
-                material = new THREE.MeshLambertMaterial({ color: blockData.color, transparent: !!blockData.opacity, opacity: blockData.opacity || 1 });
+                material = new THREE.MeshLambertMaterial({ 
+                    color: blockData.color, 
+                    transparent: !!blockData.opacity, 
+                    opacity: blockData.opacity || 1 
+                });
             }
             const voxel = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
             voxel.position.set(x + 0.5, y + 0.5, z + 0.5);
@@ -504,12 +580,12 @@
             else if (data.resourceType === 'emerald') texture = emeraldTexture;
 
             const materials = [
-                new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.3 }), // right
-                new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.3 }), // left
-                new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 }), // top
-                new THREE.MeshBasicMaterial({ color: 0x444444, transparent: true, opacity: 0.3 }), // bottom
-                texture ? new THREE.MeshBasicMaterial({ map: texture, transparent: true }) : new THREE.MeshBasicMaterial({ color: 0x888888 }), // front
-                new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.3 })  // back
+                new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.3 }),
+                new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.3 }),
+                new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 }),
+                new THREE.MeshBasicMaterial({ color: 0x444444, transparent: true, opacity: 0.3 }),
+                texture ? new THREE.MeshBasicMaterial({ map: texture, transparent: true }) : new THREE.MeshBasicMaterial({ color: 0x888888 }),
+                new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.3 })
             ];
 
             const pickup = new THREE.Mesh(geometry, materials);
@@ -530,24 +606,23 @@
             }
         }
 
-        // --- Physics & Controls --- (unchanged)
+        // --- Physics & Controls ---
         const PLAYER_HEIGHT = 1.8;
         const EYE_HEIGHT = 1.6;
         const CROUCH_HEIGHT = 1.3;
         const PLAYER_RADIUS = 0.4;
 
-        camera.position.set(-12, 5, -12);
+        camera.position.set(-12, 15, -12); // Start higher for spectator view
         const controls = new PointerLockControls(camera, document.body);
         const velocity = new THREE.Vector3();
-        const moveState = { fwd: false, bwd: false, l: false, r: false };
         let onGround = false;
 
-        // Event listeners (unchanged)
+        // Event listeners
         document.addEventListener('keydown', (e) => {
-            if(e.code === 'KeyB') toggleShop();
+            if(e.code === 'KeyB' && !spectatorMode) toggleShop();
             if(document.getElementById('shop').style.display === 'block') return;
 
-            if (e.code.startsWith('Digit') && e.code !== 'Digit0') {
+            if (e.code.startsWith('Digit') && e.code !== 'Digit0' && !spectatorMode) {
                 const num = parseInt(e.key);
                 if (num >= 1 && num <= 9) {
                     selectSlot(num - 1);
@@ -559,8 +634,13 @@
                 case 'KeyS': moveState.bwd = true; break;
                 case 'KeyA': moveState.l = true; break;
                 case 'KeyD': moveState.r = true; break;
+                case 'KeyE': moveState.up = true; break;  // E for up in spectator
+                case 'KeyQ': moveState.down = true; break; // Q for down in spectator
                 case 'Space':
-                    if(onGround && !isCrouching) {
+                    if (spectatorMode) {
+                        // Reset spectator position
+                        camera.position.set(-12, 15, -12);
+                    } else if (onGround && !isCrouching) {
                         velocity.y = 7.5;
                         onGround = false;
                     } else if (onGround && isCrouching) {
@@ -585,6 +665,8 @@
                 case 'KeyS': moveState.bwd = false; break;
                 case 'KeyA': moveState.l = false; break;
                 case 'KeyD': moveState.r = false; break;
+                case 'KeyE': moveState.up = false; break;
+                case 'KeyQ': moveState.down = false; break;
                 case 'ShiftLeft':
                 case 'ShiftRight':
                     isCrouching = false;
@@ -600,6 +682,8 @@
                 if(document.getElementById('shop').style.display !== 'block') controls.lock();
                 return;
             }
+
+            if (spectatorMode) return; // Spectators can't interact
 
             raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
             const intersects = raycaster.intersectObjects(blocksInScene);
@@ -634,10 +718,9 @@
                     if (canPlace) {
                         const type = currentSlot.type;
                         socket.emit('placeAttempt', { x: blockX, y: blockY, z: blockZ, type });
-                        // Removed optimistic addBlockMesh
                     }
                 }
-            } else if (e.button === 0) { // Break (unchanged)
+            } else if (e.button === 0) { // Break
                 if (intersects.length > 0) {
                     const obj = intersects[0].object;
                     if (intersects[0].distance > 5) return;
@@ -683,7 +766,7 @@
 
         document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-        // Collision functions unchanged
+        // Collision functions
         function checkCollision(pos) {
             const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
             const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
@@ -721,7 +804,7 @@
             prevTime = time;
 
             // Breaking logic 
-            if (isBreaking && breakingBlock) {
+            if (isBreaking && breakingBlock && !spectatorMode) {
                 const elapsed = Date.now() - breakingStartTime;
                 const progress = Math.min((elapsed / breakingDuration) * 100, 100);
                 document.getElementById('break-progress-bar').style.width = progress + '%';
@@ -739,7 +822,6 @@
                     const y = Math.floor(breakingBlock.position.y - 0.5);
                     const z = Math.floor(breakingBlock.position.z - 0.5);
                     socket.emit('breakAttempt', { x, y, z });
-                    // Removed optimistic removeBlockMesh
                     isBreaking = false;
                     breakingBlock = null;
                     document.getElementById('break-progress').style.display = 'none';
@@ -753,7 +835,7 @@
 
             const now = Date.now();
 
-            // Spawners unchanged
+            // Spawners animation
             resourceSpawners.forEach(spawner => {
                 const pulseSpeed = 2;
                 const pulseAmount = 0.1;
@@ -772,75 +854,98 @@
                 // Billboard: always face the camera on the front face
                 pickup.lookAt(camera.position);
 
-                // Collection unchanged
+                // Collection
                 const dist = camera.position.distanceTo(pickup.position);
-                if (dist < 1.5) {
+                if (dist < 1.5 && !spectatorMode) {
                     socket.emit('claimPickupAttempt', pickup.userData.id);
-                    removePickupMesh(pickup.userData.id); // Optimistic for pickups kept
+                    removePickupMesh(pickup.userData.id);
                 }
             }
 
-            // Movement and physics unchanged
+            // Movement and physics
             if (controls.isLocked) {
-                velocity.y -= 20.0 * delta;
-
-                const direction = new THREE.Vector3();
-                direction.z = Number(moveState.fwd) - Number(moveState.bwd);
-                direction.x = Number(moveState.r) - Number(moveState.l);
-                direction.normalize();
-
-                const baseSpeed = 5.0;
-                const speed = isCrouching ? baseSpeed * 0.6 : baseSpeed;
-
-                if (direction.x !== 0) {
-                    const moveDir = new THREE.Vector3(1, 0, 0);
-                    moveDir.applyQuaternion(camera.quaternion);
-                    moveDir.y = 0;
-                    moveDir.normalize();
-                    if (!wouldFallOffEdge(camera.position, moveDir.multiplyScalar(direction.x))) {
-                        controls.moveRight(direction.x * speed * delta);
-                        if (checkCollision(camera.position)) controls.moveRight(-direction.x * speed * delta);
+                if (spectatorMode) {
+                    // Spectator mode - flying with no gravity
+                    const flySpeed = isCrouching ? 20 : 10;
+                    
+                    if (moveState.x !== 0) {
+                        const moveDir = new THREE.Vector3(1, 0, 0);
+                        moveDir.applyQuaternion(camera.quaternion);
+                        controls.moveRight(moveState.x * flySpeed * delta);
                     }
-                }
-
-                if (direction.z !== 0) {
-                    const moveDir = new THREE.Vector3(0, 0, -1);
-                    moveDir.applyQuaternion(camera.quaternion);
-                    moveDir.y = 0;
-                    moveDir.normalize();
-                    if (!wouldFallOffEdge(camera.position, moveDir.multiplyScalar(direction.z))) {
-                        controls.moveForward(direction.z * speed * delta);
-                        if (checkCollision(camera.position)) controls.moveForward(-direction.z * speed * delta);
+                    
+                    if (moveState.z !== 0) {
+                        const moveDir = new THREE.Vector3(0, 0, -1);
+                        moveDir.applyQuaternion(camera.quaternion);
+                        controls.moveForward(moveState.z * flySpeed * delta);
                     }
-                }
+                    
+                    // Up/down movement for spectator
+                    if (moveState.up) {
+                        camera.position.y += flySpeed * delta;
+                    }
+                    if (moveState.down) {
+                        camera.position.y -= flySpeed * delta;
+                    }
+                    
+                } else {
+                    // Normal movement
+                    velocity.y -= 20.0 * delta;
 
-                camera.position.y += velocity.y * delta;
-                onGround = false;
+                    const direction = new THREE.Vector3();
+                    direction.z = Number(moveState.fwd) - Number(moveState.bwd);
+                    direction.x = Number(moveState.r) - Number(moveState.l);
+                    direction.normalize();
 
-                const currentEyeHeightForFoot = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
-                const footBox = new THREE.Box3().setFromCenterAndSize(
-                    new THREE.Vector3(camera.position.x, camera.position.y - currentEyeHeightForFoot, camera.position.z),
-                    new THREE.Vector3(PLAYER_RADIUS, 0.2, PLAYER_RADIUS)
-                );
+                    const baseSpeed = 5.0;
+                    const speed = isCrouching ? baseSpeed * 0.6 : baseSpeed;
 
-                for (const b of blocksInScene) {
-                    const bBox = new THREE.Box3().setFromObject(b);
-                    if (footBox.intersectsBox(bBox)) {
-                        if (velocity.y < 0) {
-                            velocity.y = 0;
-                            camera.position.y = bBox.max.y + currentEyeHeightForFoot;
-                            onGround = true;
+                    if (direction.x !== 0) {
+                        const moveDir = new THREE.Vector3(1, 0, 0);
+                        moveDir.applyQuaternion(camera.quaternion);
+                        moveDir.y = 0;
+                        moveDir.normalize();
+                        if (!wouldFallOffEdge(camera.position, moveDir.multiplyScalar(direction.x))) {
+                            controls.moveRight(direction.x * speed * delta);
+                            if (checkCollision(camera.position)) controls.moveRight(-direction.x * speed * delta);
+                        }
+                    }
+
+                    if (direction.z !== 0) {
+                        const moveDir = new THREE.Vector3(0, 0, -1);
+                        moveDir.applyQuaternion(camera.quaternion);
+                        moveDir.y = 0;
+                        moveDir.normalize();
+                        if (!wouldFallOffEdge(camera.position, moveDir.multiplyScalar(direction.z))) {
+                            controls.moveForward(direction.z * speed * delta);
+                            if (checkCollision(camera.position)) controls.moveForward(-direction.z * speed * delta);
+                        }
+                    }
+
+                    camera.position.y += velocity.y * delta;
+                    onGround = false;
+
+                    const currentEyeHeightForFoot = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
+                    const footBox = new THREE.Box3().setFromCenterAndSize(
+                        new THREE.Vector3(camera.position.x, camera.position.y - currentEyeHeightForFoot, camera.position.z),
+                        new THREE.Vector3(PLAYER_RADIUS, 0.2, PLAYER_RADIUS)
+                    );
+
+                    for (const b of blocksInScene) {
+                        const bBox = new THREE.Box3().setFromObject(b);
+                        if (footBox.intersectsBox(bBox)) {
+                            if (velocity.y < 0) {
+                                velocity.y = 0;
+                                camera.position.y = bBox.max.y + currentEyeHeightForFoot;
+                                onGround = true;
+                            }
                         }
                     }
                 }
-
-                if (camera.position.y < -30) {
-                    // Death handled server-side
-                }
             }
 
-            // Player update send
-            if (controls.isLocked && socket.connected && time - lastPlayerUpdate > PLAYER_UPDATE_RATE) {
+            // Player update send (only if not spectator)
+            if (controls.isLocked && socket.connected && time - lastPlayerUpdate > PLAYER_UPDATE_RATE && !spectatorMode) {
                 socket.emit('playerUpdate', {
                     pos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
                     rot: { yaw: camera.rotation.y, pitch: camera.rotation.x },
@@ -868,7 +973,57 @@
         let lastPlayerUpdate = 0;
         const PLAYER_UPDATE_RATE = 50;  // ms
 
-        // Inventory, UI, shop functions unchanged (omitted for brevity, copy from previous version)
+        // Helper functions
+        function updateTimerDisplay(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            document.getElementById('round-timer').innerText = 
+                `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function enableSpectatorMode() {
+            spectatorMode = true;
+            isSpectator = true;
+            
+            // Make player invisible to others (server will handle this)
+            velocity.set(0, 0, 0);
+            onGround = true;
+            
+            // Position camera higher
+            camera.position.set(-12, 15, -12);
+            
+            // Hide UI elements
+            document.getElementById('hotbar-container').style.display = 'none';
+            document.getElementById('stats').style.display = 'none';
+            document.getElementById('break-progress').style.display = 'none';
+            document.getElementById('item-name-overlay').style.display = 'none';
+            document.getElementById('spectator-indicator').style.display = 'block';
+            
+            // Update controls hint for spectator
+            document.getElementById('controls-hint').innerHTML = 
+                `SPECTATOR MODE<br>
+                WASD: Move | E/Q: Up/Down<br>
+                SPACE: Reset View | SHIFT: Faster<br>
+                Mouse: Look Around`;
+        }
+
+        function disableSpectatorMode() {
+            spectatorMode = false;
+            // Show UI elements
+            document.getElementById('hotbar-container').style.display = 'flex';
+            document.getElementById('stats').style.display = 'block';
+            document.getElementById('item-name-overlay').style.display = 'block';
+            document.getElementById('spectator-indicator').style.display = 'none';
+            
+            // Reset controls hint
+            document.getElementById('controls-hint').innerHTML = 
+                `WASD: Move | SPACE: Jump<br>
+                <span id="crouch-hint">SHIFT: Crouch</span> | 1-9: Select<br>
+                B: Shop<br>
+                <span style="color: #ff8888">Hold L-Click: Break</span><br>
+                <span style="color: #88ff88">R-Click: Build</span>`;
+        }
+
         function addToInventory(blockType, amount) {
             for (let i = 0; i < INVENTORY_SIZE; i++) {
                 if (inventory[i] && inventory[i].type === blockType && inventory[i].count < MAX_STACK) {
@@ -909,6 +1064,7 @@
         }
 
         function selectSlot(index) {
+            if (spectatorMode) return;
             selectedSlotIndex = index;
             updateUI();
             const slot = inventory[selectedSlotIndex];
@@ -1008,6 +1164,7 @@
         }
 
         function toggleShop() {
+            if (spectatorMode) return;
             const shop = document.getElementById('shop');
             const isVisible = shop.style.display === 'block';
             shop.style.display = isVisible ? 'none' : 'block';
@@ -1157,7 +1314,7 @@
             else removeBlockMesh(x, y, z);
         });
         socket.on('revertPlace', ({ x, y, z }) => removeBlockMesh(x, y, z));
-        socket.on('revertPickup', addPickupMesh);  // data has id,x,y,z,resourceType
+        socket.on('revertPickup', addPickupMesh);
 
         socket.on('updateCurrency', (curr) => {
             currency = curr;
@@ -1169,7 +1326,7 @@
         });
         socket.on('buyFailed', () => {
             showNotification('Not enough resources or inventory full!');
-            renderShop();  // Refresh shop UI
+            renderShop();
         });
 
         socket.on('removePlayer', (id) => {
@@ -1200,6 +1357,64 @@
 
         socket.on('gameStart', () => {
             showNotification('GO!');
+            roundTimeRemaining = 15 * 60;
+            updateTimerDisplay(roundTimeRemaining);
+            
+            // Start timer
+            if (roundTimerInterval) clearInterval(roundTimerInterval);
+            roundTimerInterval = setInterval(() => {
+                if (roundTimeRemaining > 0) {
+                    roundTimeRemaining--;
+                    updateTimerDisplay(roundTimeRemaining);
+                }
+            }, 1000);
+            
+            // Hide waiting text
+            document.getElementById('waiting-text').style.display = 'none';
+            
+            // If spectator, stay in spectator mode
+            if (isSpectator) {
+                enableSpectatorMode();
+            } else {
+                disableSpectatorMode();
+            }
+        });
+
+        socket.on('waitingForPlayers', (count) => {
+            const waitingText = document.getElementById('waiting-text');
+            waitingText.style.display = 'block';
+            
+            if (count === 1) {
+                waitingText.innerText = 'Waiting for 1 more player...';
+            } else {
+                waitingText.innerText = `Waiting for ${count} more players...`;
+            }
+            
+            // Show timer at 15:00
+            roundTimeRemaining = 15 * 60;
+            updateTimerDisplay(roundTimeRemaining);
+            
+            // Enable spectator mode while waiting
+            if (!spectatorMode) {
+                enableSpectatorMode();
+            }
+        });
+
+        socket.on('youAreSpectator', () => {
+            isSpectator = true;
+            enableSpectatorMode();
+            showNotification('You are in spectator mode', 3000);
+        });
+
+        socket.on('playerEliminated', () => {
+            isSpectator = true;
+            enableSpectatorMode();
+            showNotification('You have been eliminated! Now spectating.', 5000);
+        });
+
+        socket.on('updateTimer', (timeRemaining) => {
+            roundTimeRemaining = Math.floor(timeRemaining / 1000);
+            updateTimerDisplay(roundTimeRemaining);
         });
 
         socket.on('gameEnd', ({ winner }) => {
@@ -1207,6 +1422,14 @@
                 showNotification('You Win!', 5000);
             } else {
                 showNotification(`Player ${winner.substring(0,6)} Wins!`, 5000);
+            }
+            
+            // Stop timer
+            if (roundTimerInterval) clearInterval(roundTimerInterval);
+            
+            // Keep spectator mode if eliminated
+            if (!isSpectator) {
+                disableSpectatorMode();
             }
         });
 
@@ -1231,6 +1454,11 @@
             currency = data.currency;
             updateUI();
             velocity.set(0, 0, 0);
+            
+            // Reset spectator state
+            isSpectator = false;
+            spectatorMode = false;
+            disableSpectatorMode();
         });
 
         selectSlot(0);
