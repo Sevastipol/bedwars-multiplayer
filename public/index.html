@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -290,7 +291,7 @@
             'Wood': { color: 0x5d4037, cost: { gold: 5 }, breakTime: 3, buyAmount: 32, hasTexture: true },
             'Stone': { color: 0x777777, cost: { gold: 5 }, breakTime: 6, buyAmount: 8, hasTexture: true },
             'Obsidian': { color: 0x111111, cost: { emerald: 1 }, breakTime: 12, buyAmount: 1, hasTexture: true },
-            'Bed': { color: 0xff0000, cost: {}, breakTime: 0.5, buyAmount: 0, hasTexture: false }
+            'Bed': { color: 0xff0000, breakTime: 2, buyAmount: 1, hasTexture: false }
         };
         const MAX_STACK = 64;
         const INVENTORY_SIZE = 9;
@@ -319,7 +320,7 @@
         let playerId = null;
         let blocksMeshes = new Map();  // key -> mesh (for fast remove)
         let pickupMeshes = new Map();  // id -> mesh
-        let otherPlayers = new Map();  // id -> {group, leftLeg, rightLeg, torso, leftArm, rightArm, head, nameMesh, targetPos, targetRot, targetCrouch, crouch}
+        let otherPlayers = new Map();  // id -> {group, head, targetPos, targetRot}
 
         // --- Three.js Setup ---
         const scene = new THREE.Scene();
@@ -818,7 +819,7 @@
                 }
 
                 if (camera.position.y < -30) {
-                    socket.emit('fellOut');
+                    // Death handled server-side
                 }
             }
 
@@ -841,9 +842,8 @@
                 // Crouch
                 if (data.targetCrouch !== data.crouch) {
                     data.crouch = data.targetCrouch;
-                    updatePlayerModelHeights(data);
                 }
-                data.nameMesh.lookAt(camera.position);
+                data.group.scale.y = data.crouch ? 0.75 : 1;
             });
 
             renderer.render(scene, camera);
@@ -971,7 +971,7 @@
         function renderShop() {
             const container = document.getElementById('shop-container');
             container.innerHTML = '';
-            Object.entries(BLOCK_TYPES).filter(([name, data]) => data.buyAmount > 0).forEach(([name, data]) => {
+            Object.entries(BLOCK_TYPES).filter(([name]) => name !== 'Bed').forEach(([name, data]) => {
                 const item = document.createElement('div');
                 const affordable = canAfford(data.cost);
                 item.className = `shop-item ${affordable ? '' : 'disabled'}`;
@@ -1012,36 +1012,42 @@
             const group = new THREE.Group();
             group.name = id;
 
-            const bodyMaterial = new THREE.MeshLambertMaterial({ color: getPlayerColor(id) });
-            const headMaterial = new THREE.MeshLambertMaterial({ color: 0xffdbac });
+            // Head
+            const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+            const headMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.position.y = 1.4;
+            group.add(head);
 
-            const legGeometry = new THREE.BoxGeometry(0.3, 0.8, 0.3);
-            const leftLeg = new THREE.Mesh(legGeometry, bodyMaterial);
-            leftLeg.position.set(-0.2, 0.4, 0);
-            group.add(leftLeg);
+            // Body
+            const bodyGeo = new THREE.BoxGeometry(0.6, 0.8, 0.3);
+            const bodyColor = getPlayerColor(id);
+            const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.position.y = 0.7;
+            group.add(body);
 
-            const rightLeg = new THREE.Mesh(legGeometry, bodyMaterial);
-            rightLeg.position.set(0.2, 0.4, 0);
-            group.add(rightLeg);
-
-            const torsoGeometry = new THREE.BoxGeometry(0.5, 0.7, 0.4);
-            const torso = new THREE.Mesh(torsoGeometry, bodyMaterial);
-            torso.position.set(0, 1.15, 0);
-            group.add(torso);
-
-            const armGeometry = new THREE.BoxGeometry(0.25, 0.8, 0.25);
-            const leftArm = new THREE.Mesh(armGeometry, bodyMaterial);
-            leftArm.position.set(-0.4, 1.1, 0);
+            // Arms
+            const armGeo = new THREE.BoxGeometry(0.25, 0.8, 0.25);
+            const armMat = bodyMat;
+            const leftArm = new THREE.Mesh(armGeo, armMat);
+            leftArm.position.set(0.5, 0.7, 0);
             group.add(leftArm);
 
-            const rightArm = new THREE.Mesh(armGeometry, bodyMaterial);
-            rightArm.position.set(0.4, 1.1, 0);
+            const rightArm = new THREE.Mesh(armGeo, armMat);
+            rightArm.position.set(-0.5, 0.7, 0);
             group.add(rightArm);
 
-            const headGeometry = new THREE.BoxGeometry(0.4, 0.4, 0.4);
-            const head = new THREE.Mesh(headGeometry, headMaterial);
-            head.position.set(0, 1.7, 0);
-            group.add(head);
+            // Legs
+            const legGeo = new THREE.BoxGeometry(0.3, 0.8, 0.3);
+            const legMat = new THREE.MeshLambertMaterial({ color: 0x333366 });
+            const leftLeg = new THREE.Mesh(legGeo, legMat);
+            leftLeg.position.set(0.2, 0, 0);
+            group.add(leftLeg);
+
+            const rightLeg = new THREE.Mesh(legGeo, legMat);
+            rightLeg.position.set(-0.2, 0, 0);
+            group.add(rightLeg);
 
             // Name tag
             const canvas = document.createElement('canvas');
@@ -1059,45 +1065,19 @@
                 new THREE.PlaneGeometry(1.2, 0.3),
                 new THREE.MeshBasicMaterial({ map: texture, transparent: true })
             );
-            nameMesh.position.set(0, 2.0, 0);
+            nameMesh.position.y = 1.8;
             group.add(nameMesh);
 
             scene.add(group);
 
             otherPlayers.set(id, {
                 group,
-                leftLeg,
-                rightLeg,
-                torso,
-                leftArm,
-                rightArm,
                 head,
-                nameMesh,
                 targetPos: { x: 0, y: 0, z: 0 },
                 targetRot: { yaw: 0, pitch: 0 },
                 targetCrouch: false,
                 crouch: false
             });
-        }
-
-        function updatePlayerModelHeights(data) {
-            if (data.crouch) {
-                data.leftLeg.position.y = 0.2;
-                data.rightLeg.position.y = 0.2;
-                data.torso.position.y = 0.75;
-                data.leftArm.position.y = 0.7;
-                data.rightArm.position.y = 0.7;
-                data.head.position.y = 1.3;
-                data.nameMesh.position.y = 1.6;
-            } else {
-                data.leftLeg.position.y = 0.4;
-                data.rightLeg.position.y = 0.4;
-                data.torso.position.y = 1.15;
-                data.leftArm.position.y = 1.1;
-                data.rightArm.position.y = 1.1;
-                data.head.position.y = 1.7;
-                data.nameMesh.position.y = 2.0;
-            }
         }
 
         // Socket events
@@ -1119,7 +1099,6 @@
                 op.targetPos = pos;
                 op.targetRot = rot;
                 op.targetCrouch = crouch;
-                updatePlayerModelHeights(op);
             });
         });
 
@@ -1129,7 +1108,6 @@
             op.targetPos = pos;
             op.targetRot = rot;
             op.targetCrouch = crouch;
-            updatePlayerModelHeights(op);
         });
 
         socket.on('playersUpdate', (states) => {
@@ -1177,16 +1155,18 @@
             }
         });
 
-        socket.on('respawnPos', (pos) => {
-            camera.position.set(pos.x, pos.y, pos.z);
-            velocity.y = 0;
+        socket.on('respawn', (data) => {
+            camera.position.set(data.pos.x, data.pos.y, data.pos.z);
+            camera.rotation.set(data.rot.pitch, data.rot.yaw, 0);
+            velocity.set(0, 0, 0);
+        });
+
+        socket.on('bedDestroyed', () => {
+            alert('Your bed was destroyed! If you die, you cannot respawn and will be disconnected.');
         });
 
         socket.on('noRespawn', () => {
-            alert('Your bed was destroyed! You cannot respawn.');
-            controls.unlock();
-            document.getElementById('loading').style.display = 'flex';
-            document.getElementById('loading').innerText = 'Game Over';
+            alert('No bed, cannot respawn. Disconnected.');
         });
 
         selectSlot(0);
