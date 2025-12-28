@@ -1,13 +1,32 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>3D Island Builder - Multiplayer</title>
     <style>
-        /* Existing styles... */
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', sans-serif;
+            user-select: none;
+        }
 
-        /* NEW: Timer Display */
+        /* Centered Crosshair */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            mix-blend-mode: difference;
+            z-index: 10;
+        }
+
+        /* Timer Display */
         #timer {
             position: absolute;
             top: 20px;
@@ -23,6 +42,221 @@
             pointer-events: none;
             z-index: 5;
             display: none;
+        }
+
+        /* Top Left Stats */
+        #stats {
+            position: absolute;
+            top: 80px;
+            left: 20px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 15px;
+            border-radius: 10px;
+            pointer-events: none;
+        }
+
+        .currency-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 5px 0;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+
+        .currency-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            image-rendering: pixelated;
+        }
+
+        /* Item Name Overlay */
+        #item-name-overlay {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-size: 24px;
+            font-weight: 600;
+            text-shadow: 0px 2px 4px rgba(0,0,0,0.8);
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            pointer-events: none;
+            z-index: 15;
+        }
+
+        /* Breaking Progress Bar */
+        #break-progress {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, 20px);
+            width: 200px;
+            height: 20px;
+            background: rgba(0,0,0,0.7);
+            border: 2px solid white;
+            border-radius: 4px;
+            display: none;
+            overflow: hidden;
+        }
+
+        #break-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4d9043, #7bc96f);
+            width: 0%;
+            transition: width 0.1s linear;
+        }
+
+        /* Inventory Hotbar */
+        #hotbar-container {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .inv-slot {
+            width: 50px;
+            height: 50px;
+            background: rgba(0, 0, 0, 0.6);
+            border: 3px solid #444;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .inv-slot.active {
+            border-color: white;
+            transform: scale(1.1);
+            background: rgba(50, 50, 50, 0.8);
+        }
+
+        .slot-count {
+            position: absolute;
+            bottom: 2px;
+            right: 4px;
+            font-size: 14px;
+            text-shadow: 1px 1px 0 #000;
+        }
+
+        .slot-key {
+            position: absolute;
+            top: 2px;
+            left: 4px;
+            font-size: 10px;
+            color: #aaa;
+        }
+
+        /* Shop UI */
+        #shop {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(16, 16, 16, 0.95);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            display: none;
+            text-align: center;
+            border: 2px solid #555;
+            min-width: 450px;
+            z-index: 20;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
+
+        .shop-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 15px;
+        }
+
+        .shop-item {
+            padding: 15px;
+            border: 1px solid #444;
+            cursor: pointer;
+            background: #222;
+            transition: 0.2s;
+        }
+
+        .shop-item:hover {
+            background: #333;
+            border-color: #fff;
+        }
+
+        .shop-item:active {
+            background: #444;
+        }
+
+        .shop-item.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .block-icon {
+            width: 20px;
+            height: 20px;
+            border: 1px solid rgba(255,255,255,0.3);
+            image-rendering: pixelated;
+        }
+
+        #controls-hint {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: #ccc;
+            font-size: 12px;
+            text-align: right;
+            text-shadow: 1px 1px 2px black;
+        }
+
+        .crouch-indicator {
+            color: #ffff88 !important;
+        }
+
+        /* Loading Screen */
+        #loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            z-index: 100;
+        }
+
+        #notification {
+            position: absolute;
+            top: 10%;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 30px;
+            text-shadow: 2px 2px 4px black;
+            background: rgba(0,0,0,0.5);
+            padding: 10px 20px;
+            border-radius: 10px;
+            display: none;
+            z-index: 15;
         }
 
         /* NEW: Spectator Indicator */
@@ -60,14 +294,6 @@
             z-index: 20;
             pointer-events: none;
         }
-
-        /* Move stats down for timer */
-        #stats {
-            position: absolute;
-            top: 80px; /* Moved down for timer */
-            left: 20px;
-            /* rest unchanged */
-        }
     </style>
 </head>
 <body>
@@ -80,11 +306,52 @@
     <!-- NEW: Waiting Message -->
     <div id="waiting-message"></div>
     
-    <!-- Existing elements... -->
+    <!-- Existing elements -->
     <div id="loading">Connecting to server...</div>
     <div id="crosshair"></div>
-    <!-- ... rest of body ... -->
+    <div id="stats">
+        <div class="currency-row">
+            <img src="https://i.ibb.co/n87Ym7RY/pixilart-drawing-7.png" class="currency-icon">
+            <span id="iron">0</span>
+        </div>
+        <div class="currency-row">
+            <img src="https://i.ibb.co/27GwzjkT/pixilart-drawing-6.png" class="currency-icon">
+            <span id="gold">0</span>
+        </div>
+        <div class="currency-row">
+            <img src="https://i.ibb.co/hxX4ywxj/pixilart-drawing-8.png" class="currency-icon">
+            <span id="emerald">0</span>
+        </div>
+    </div>
+    <div id="controls-hint">
+        WASD: Move | SPACE: Jump<br>
+        <span id="crouch-hint">SHIFT: Crouch</span> | 1-9: Select<br>
+        B: Shop<br>
+        <span style="color: #ff8888">Hold L-Click: Break</span><br>
+        <span style="color: #88ff88">R-Click: Build</span>
+    </div>
+    <div id="break-progress">
+        <div id="break-progress-bar"></div>
+    </div>
+    <div id="item-name-overlay"></div>
+    <div id="hotbar-container"></div>
+    <div id="shop">
+        <h2>Construction Shop</h2>
+        <div style="color: #aaa; font-size: 0.9em; margin-bottom: 10px;">Click to buy blocks</div>
+        <div class="shop-grid" id="shop-container"></div>
+        <p style="color: #888; margin-top: 20px; font-size: 0.8em;">Press [B] to Close</p>
+    </div>
+    <div id="notification"></div>
 
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
     <script type="module">
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
@@ -98,11 +365,11 @@
 
         // --- NEW: Game State ---
         let isSpectator = false;
-        let roundTimeRemaining = 900; // 15 minutes in seconds
+        let roundTimeRemaining = 900;
         let roundTimerInterval = null;
         let isInRound = false;
 
-        // --- Updated Config ---
+        // --- Config ---
         const BLOCK_TYPES = {
             'Grass': { color: 0x4d9043, cost: { iron: 5 }, breakTime: 1.2, buyAmount: 8, hasTexture: true },
             'Glass': { color: 0xade8f4, cost: { iron: 5 }, breakTime: 0.4, buyAmount: 16, opacity: 0.6 },
@@ -183,19 +450,15 @@
             
             if (spectator) {
                 indicator.style.display = 'block';
-                // Hide UI elements for spectators
                 document.getElementById('stats').style.display = 'none';
                 document.getElementById('hotbar-container').style.display = 'none';
                 document.getElementById('crosshair').style.display = 'none';
                 document.getElementById('controls-hint').style.display = 'none';
-                
-                // Make player invisible to others (handled by server)
-                // Enable flying/spectator controls
-                velocity.y = 0; // Reset velocity
-                onGround = true; // Prevent falling
+                document.getElementById('break-progress').style.display = 'none';
+                velocity.y = 0;
+                onGround = true;
             } else {
                 indicator.style.display = 'none';
-                // Show UI elements
                 document.getElementById('stats').style.display = 'block';
                 document.getElementById('hotbar-container').style.display = 'flex';
                 document.getElementById('crosshair').style.display = 'block';
@@ -226,9 +489,185 @@
         sun.position.set(20, 50, 20);
         scene.add(sun);
 
-        // Load textures (unchanged)...
+        // Load textures
+        const textureLoader = new THREE.TextureLoader();
+        let grassTexture = null;
+        let woodTexture = null;
+        let stoneTexture = null;
+        let obsidianTexture = null;
+        let ironTexture = null;
+        let goldTexture = null;
+        let emeraldTexture = null;
+        let breakingTextures = [];
 
-        // --- World Generation (unchanged)...
+        textureLoader.load('https://i.ibb.co/394nfmMz/pixilart-drawing-3.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            grassTexture = texture;
+        });
+
+        textureLoader.load('https://i.ibb.co/KpWBZRPS/pixilart-drawing-2.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            woodTexture = texture;
+        });
+
+        textureLoader.load('https://i.ibb.co/rGVR38xv/pixilart-drawing-5.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            stoneTexture = texture;
+        });
+
+        textureLoader.load('https://i.ibb.co/bRdZdGR2/pixilart-drawing-4.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            obsidianTexture = texture;
+        });
+
+        textureLoader.load('https://i.ibb.co/n87Ym7RY/pixilart-drawing-7.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            ironTexture = texture;
+        });
+
+        textureLoader.load('https://i.ibb.co/27GwzjkT/pixilart-drawing-6.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            goldTexture = texture;
+        });
+
+        textureLoader.load('https://i.ibb.co/hxX4ywxj/pixilart-drawing-8.png', (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            emeraldTexture = texture;
+        });
+
+        // Load breaking textures
+        const breakingTextureUrls = [
+            'https://i.ibb.co/hxcqsNSc/pixil-frame-0.png',
+            'https://i.ibb.co/9ms6601B/pixil-frame-0-1.png',
+            'https://i.ibb.co/Ng24qysY/pixil-frame-0-2.png',
+            'https://i.ibb.co/ccsc9WQg/pixil-frame-0-3.png',
+            'https://i.ibb.co/YBqh6x4w/pixil-frame-0-4.png',
+            'https://i.ibb.co/NnsSg1sL/pixil-frame-0-5.png',
+            'https://i.ibb.co/5HCS1DL/pixil-frame-0-6.png',
+            'https://i.ibb.co/PGxn1rDt/pixil-frame-0-7.png',
+            'https://i.ibb.co/4wfn1SFL/pixil-frame-0-8.png'
+        ];
+
+        const loadBreakingTextures = async () => {
+            for (let i = 0; i < breakingTextureUrls.length; i++) {
+                await new Promise((resolve) => {
+                    textureLoader.load(breakingTextureUrls[i], (texture) => {
+                        texture.magFilter = THREE.NearestFilter;
+                        texture.minFilter = THREE.NearestFilter;
+                        texture.wrapS = THREE.RepeatWrapping;
+                        texture.wrapT = THREE.RepeatWrapping;
+                        breakingTextures[i] = texture;
+                        resolve();
+                    });
+                });
+            }
+        };
+        loadBreakingTextures();
+
+        // --- World Generation ---
+        function addBlockMesh(x, y, z, type) {
+            const blockData = BLOCK_TYPES[type];
+            let material;
+            if (type === 'Grass' && grassTexture) {
+                material = new THREE.MeshLambertMaterial({ map: grassTexture });
+            } else if (type === 'Wood' && woodTexture) {
+                material = new THREE.MeshLambertMaterial({ map: woodTexture });
+            } else if (type === 'Stone' && stoneTexture) {
+                material = new THREE.MeshLambertMaterial({ map: stoneTexture });
+            } else if (type === 'Obsidian' && obsidianTexture) {
+                material = new THREE.MeshLambertMaterial({ map: obsidianTexture });
+            } else {
+                material = new THREE.MeshLambertMaterial({ color: blockData.color, transparent: !!blockData.opacity, opacity: blockData.opacity || 1 });
+            }
+            const voxel = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
+            voxel.position.set(x + 0.5, y + 0.5, z + 0.5);
+            voxel.userData = { type: type };
+            scene.add(voxel);
+            blocksInScene.push(voxel);
+            const key = `${x},${y},${z}`;
+            blocksMeshes.set(key, voxel);
+            return voxel;
+        }
+
+        function removeBlockMesh(x, y, z) {
+            const key = `${x},${y},${z}`;
+            const mesh = blocksMeshes.get(key);
+            if (mesh) {
+                scene.remove(mesh);
+                const idx = blocksInScene.indexOf(mesh);
+                if (idx > -1) blocksInScene.splice(idx, 1);
+                blocksMeshes.delete(key);
+            }
+        }
+
+        function addResourceSpawner(x, y, z, resourceType, interval) {
+            const colors = { iron: 0xa0a0a0, gold: 0xffd700, emerald: 0x00ff88 };
+            const spawner = new THREE.Mesh(
+                new THREE.SphereGeometry(0.3, 16, 16),
+                new THREE.MeshStandardMaterial({
+                    color: colors[resourceType],
+                    emissive: colors[resourceType],
+                    emissiveIntensity: 0.5,
+                    metalness: 0.8,
+                    roughness: 0.2
+                })
+            );
+            spawner.position.set(x, y, z);
+            spawner.userData = { type: 'spawner', resourceType: resourceType, lastSpawn: Date.now(), interval: interval * 1000 };
+            scene.add(spawner);
+            resourceSpawners.push(spawner);
+        }
+
+        function addPickupMesh(data) {
+            const size = 0.6;
+            const geometry = new THREE.BoxGeometry(size, size, size);
+
+            let texture = null;
+            if (data.resourceType === 'iron') texture = ironTexture;
+            else if (data.resourceType === 'gold') texture = goldTexture;
+            else if (data.resourceType === 'emerald') texture = emeraldTexture;
+
+            const materials = [
+                new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.3 }),
+                new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.3 }),
+                new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 }),
+                new THREE.MeshBasicMaterial({ color: 0x444444, transparent: true, opacity: 0.3 }),
+                texture ? new THREE.MeshBasicMaterial({ map: texture, transparent: true }) : new THREE.MeshBasicMaterial({ color: 0x888888 }),
+                new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.3 })
+            ];
+
+            const pickup = new THREE.Mesh(geometry, materials);
+            pickup.position.set(data.x, data.y, data.z);
+            pickup.userData = { type: 'resource_pickup', resourceType: data.resourceType, spawnTime: Date.now(), baseY: data.y, id: data.id };
+            scene.add(pickup);
+            resourcePickups.push(pickup);
+            pickupMeshes.set(data.id, pickup);
+        }
+
+        function removePickupMesh(id) {
+            const mesh = pickupMeshes.get(id);
+            if (mesh) {
+                scene.remove(mesh);
+                const idx = resourcePickups.indexOf(mesh);
+                if (idx > -1) resourcePickups.splice(idx, 1);
+                pickupMeshes.delete(id);
+            }
+        }
 
         // --- Physics & Controls ---
         const PLAYER_HEIGHT = 1.8;
@@ -242,21 +681,19 @@
         const moveState = { fwd: false, bwd: false, l: false, r: false };
         let onGround = false;
 
-        // Event listeners with spectator checks
+        // Event listeners
         document.addEventListener('keydown', (e) => {
             if (isSpectator) {
-                // Spectator controls - allow flying
-                if(e.code === 'KeyB') return; // No shop for spectators
+                if(e.code === 'KeyB') return;
                 
-                // Flying controls
                 switch(e.code) {
                     case 'KeyW': moveState.fwd = true; break;
                     case 'KeyS': moveState.bwd = true; break;
                     case 'KeyA': moveState.l = true; break;
                     case 'KeyD': moveState.r = true; break;
-                    case 'Space': velocity.y = 5; break; // Fly up
+                    case 'Space': velocity.y = 5; break;
                     case 'ShiftLeft':
-                    case 'ShiftRight': velocity.y = -5; break; // Fly down
+                    case 'ShiftRight': velocity.y = -5; break;
                 }
                 return;
             }
@@ -305,7 +742,7 @@
                     case 'KeyD': moveState.r = false; break;
                     case 'Space':
                     case 'ShiftLeft':
-                    case 'ShiftRight': velocity.y = 0; break; // Stop vertical movement
+                    case 'ShiftRight': velocity.y = 0; break;
                 }
                 return;
             }
@@ -326,7 +763,6 @@
         const raycaster = new THREE.Raycaster();
 
         document.addEventListener('mousedown', (e) => {
-            // Spectators can't interact
             if (isSpectator) return;
             
             if (!controls.isLocked) {
@@ -337,7 +773,7 @@
             raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
             const intersects = raycaster.intersectObjects(blocksInScene);
 
-            if (e.button === 2) { // Build
+            if (e.button === 2) {
                 const currentSlot = inventory[selectedSlotIndex];
                 if (intersects.length > 0 && currentSlot && currentSlot.count > 0) {
                     const intersect = intersects[0];
@@ -369,7 +805,7 @@
                         socket.emit('placeAttempt', { x: blockX, y: blockY, z: blockZ, type });
                     }
                 }
-            } else if (e.button === 0) { // Break
+            } else if (e.button === 0) {
                 if (intersects.length > 0) {
                     const obj = intersects[0].object;
                     if (intersects[0].distance > 5) return;
@@ -417,7 +853,7 @@
 
         // Collision functions
         function checkCollision(pos) {
-            if (isSpectator) return false; // Spectators don't collide
+            if (isSpectator) return false;
             
             const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
             const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
@@ -432,7 +868,7 @@
         }
 
         function wouldFallOffEdge(pos, direction) {
-            if (isSpectator) return false; // Spectators can't fall
+            if (isSpectator) return false;
             if (!isCrouching || !onGround) return false;
             
             const checkDistance = -0.11;
@@ -500,14 +936,11 @@
             for (let i = resourcePickups.length - 1; i >= 0; i--) {
                 const pickup = resourcePickups[i];
                 
-                // Floating
                 const floatOffset = Math.sin((now - pickup.userData.spawnTime) / 500) * 0.15;
                 pickup.position.y = pickup.userData.baseY + floatOffset;
                 
-                // Billboard: always face the camera on the front face
                 pickup.lookAt(camera.position);
 
-                // Collection
                 const dist = camera.position.distanceTo(pickup.position);
                 if (dist < 1.5 && !isSpectator) {
                     socket.emit('claimPickupAttempt', pickup.userData.id);
@@ -518,14 +951,12 @@
             // Movement and physics
             if (controls.isLocked) {
                 if (isSpectator) {
-                    // Spectator flying movement
                     const direction = new THREE.Vector3();
                     direction.z = Number(moveState.fwd) - Number(moveState.bwd);
                     direction.x = Number(moveState.r) - Number(moveState.l);
                     direction.normalize();
                     
                     const speed = 10.0;
-                    const flySpeed = 5.0;
                     
                     if (direction.x !== 0) {
                         const moveDir = new THREE.Vector3(1, 0, 0);
@@ -541,14 +972,10 @@
                         controls.moveForward(direction.z * speed * delta);
                     }
                     
-                    // Vertical movement
                     camera.position.y += velocity.y * delta;
-                    
-                    // No gravity for spectators
                     velocity.y = 0;
                     onGround = true;
                 } else {
-                    // Normal player movement
                     velocity.y -= 20.0 * delta;
 
                     const direction = new THREE.Vector3();
@@ -601,9 +1028,8 @@
                         }
                     }
 
-                    // Death handled server-side
                     if (camera.position.y < -30 && isInRound) {
-                        // Player fell - server will handle respawn or spectator mode
+                        // Death handled server-side
                     }
                 }
             }
@@ -615,14 +1041,13 @@
                     rot: { yaw: camera.rotation.y, pitch: camera.rotation.x },
                     crouch: isCrouching,
                     selected: selectedSlotIndex,
-                    spectator: isSpectator // Send spectator status
+                    spectator: isSpectator
                 });
                 lastPlayerUpdate = time;
             }
 
             // Other players lerp
             otherPlayers.forEach((data) => {
-                // Don't render spectators
                 if (data.spectator) {
                     data.group.visible = false;
                     return;
@@ -633,7 +1058,6 @@
                 data.group.rotation.y = THREE.MathUtils.lerp(data.group.rotation.y || 0, data.targetRot.yaw, 0.15);
                 data.head.rotation.x = THREE.MathUtils.lerp(data.head.rotation.x || 0, data.targetRot.pitch, 0.15);
                 
-                // Crouch
                 if (data.targetCrouch !== data.crouch) {
                     data.crouch = data.targetCrouch;
                 }
@@ -646,7 +1070,247 @@
         let lastPlayerUpdate = 0;
         const PLAYER_UPDATE_RATE = 50;
 
-        // Inventory, UI, shop functions (unchanged)...
+        // Inventory functions
+        function addToInventory(blockType, amount) {
+            for (let i = 0; i < INVENTORY_SIZE; i++) {
+                if (inventory[i] && inventory[i].type === blockType && inventory[i].count < MAX_STACK) {
+                    const space = MAX_STACK - inventory[i].count;
+                    const toAdd = Math.min(space, amount);
+                    inventory[i].count += toAdd;
+                    amount -= toAdd;
+                    if (amount === 0) {
+                        updateUI();
+                        return true;
+                    }
+                }
+            }
+            if (amount > 0) {
+                for (let i = 0; i < INVENTORY_SIZE; i++) {
+                    if (inventory[i] === null) {
+                        const toAdd = Math.min(MAX_STACK, amount);
+                        inventory[i] = { type: blockType, count: toAdd };
+                        amount -= toAdd;
+                        if (amount === 0) {
+                            updateUI();
+                            return true;
+                        }
+                    }
+                }
+            }
+            updateUI();
+            return amount === 0;
+        }
+
+        function removeFromHand() {
+            const slot = inventory[selectedSlotIndex];
+            if (slot) {
+                slot.count--;
+                if (slot.count <= 0) inventory[selectedSlotIndex] = null;
+                updateUI();
+            }
+        }
+
+        function selectSlot(index) {
+            if (isSpectator) return;
+            
+            selectedSlotIndex = index;
+            updateUI();
+            const slot = inventory[selectedSlotIndex];
+            const overlay = document.getElementById('item-name-overlay');
+            if (slot) {
+                overlay.innerText = slot.type;
+                overlay.style.opacity = '1';
+                overlay.style.color = '#' + BLOCK_TYPES[slot.type].color.toString(16).padStart(6, '0');
+                if (overlayTimeout) clearTimeout(overlayTimeout);
+                overlayTimeout = setTimeout(() => { overlay.style.opacity = '0'; }, 2000);
+            } else {
+                overlay.style.opacity = '0';
+            }
+        }
+
+        const hotbarContainer = document.getElementById('hotbar-container');
+
+        function updateUI() {
+            document.getElementById('iron').innerText = currency.iron;
+            document.getElementById('gold').innerText = currency.gold;
+            document.getElementById('emerald').innerText = currency.emerald;
+
+            hotbarContainer.innerHTML = '';
+            for (let i = 0; i < INVENTORY_SIZE; i++) {
+                const slot = inventory[i];
+                const div = document.createElement('div');
+                div.className = `inv-slot ${i === selectedSlotIndex ? 'active' : ''}`;
+                div.onclick = () => selectSlot(i);
+
+                const keyHint = document.createElement('span');
+                keyHint.className = 'slot-key';
+                keyHint.innerText = i + 1;
+                div.appendChild(keyHint);
+
+                if (slot) {
+                    const blockData = BLOCK_TYPES[slot.type];
+                    if (blockData.hasTexture) {
+                        const icon = document.createElement('img');
+                        icon.className = 'block-icon';
+                        if (slot.type === 'Grass') icon.src = 'https://i.ibb.co/394nfmMz/pixilart-drawing-3.png';
+                        else if (slot.type === 'Wood') icon.src = 'https://i.ibb.co/KpWBZRPS/pixilart-drawing-2.png';
+                        else if (slot.type === 'Stone') icon.src = 'https://i.ibb.co/rGVR38xv/pixilart-drawing-5.png';
+                        else if (slot.type === 'Obsidian') icon.src = 'https://i.ibb.co/bRdZdGR2/pixilart-drawing-4.png';
+                        div.appendChild(icon);
+                    } else {
+                        const icon = document.createElement('div');
+                        icon.className = 'block-icon';
+                        icon.style.backgroundColor = '#' + blockData.color.toString(16).padStart(6, '0');
+                        if(blockData.opacity) icon.style.opacity = blockData.opacity;
+                        div.appendChild(icon);
+                    }
+
+                    const count = document.createElement('span');
+                    count.className = 'slot-count';
+                    count.innerText = slot.count;
+                    div.appendChild(count);
+                }
+
+                hotbarContainer.appendChild(div);
+            }
+        }
+
+        function canAfford(cost) {
+            for (let [resource, amount] of Object.entries(cost)) {
+                if (currency[resource] < amount) return false;
+            }
+            return true;
+        }
+
+        function deductCurrency(cost) {
+            for (let [resource, amount] of Object.entries(cost)) {
+                currency[resource] -= amount;
+            }
+        }
+
+        function renderShop() {
+            const container = document.getElementById('shop-container');
+            container.innerHTML = '';
+            Object.entries(BLOCK_TYPES).filter(([name]) => name !== 'Bed').forEach(([name, data]) => {
+                const item = document.createElement('div');
+                const affordable = canAfford(data.cost);
+                item.className = `shop-item ${affordable ? '' : 'disabled'}`;
+                const costText = Object.entries(data.cost)
+                    .map(([res, amt]) => `${amt} ${res}`)
+                    .join(' + ');
+                item.innerHTML = `
+                    <div style="width:20px; height:20px; background:#${data.color.toString(16).padStart(6,'0')}; margin:0 auto 5px; border:1px solid #666;"></div>
+                    <strong>${name}</strong><br>
+                    <span style="font-size:0.9em; color:#aaa;">${data.buyAmount}x</span><br>
+                    <span style="color: ${affordable ? '#4d9043' : '#d32f2f'}">${costText}</span>
+                `;
+                item.onclick = () => {
+                    socket.emit('buyAttempt', name);
+                };
+                container.appendChild(item);
+            });
+        }
+
+        function toggleShop() {
+            if (isSpectator) return;
+            
+            const shop = document.getElementById('shop');
+            const isVisible = shop.style.display === 'block';
+            shop.style.display = isVisible ? 'none' : 'block';
+            isVisible ? controls.lock() : (renderShop(), controls.unlock());
+        }
+
+        function getPlayerColor(id) {
+            let hash = 0;
+            for (let i = 0; i < id.length; i++) {
+                hash = id.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            hash = Math.abs(hash) % 360;
+            const color = new THREE.Color().setHSL(hash / 360, 0.7, 0.6);
+            return color;
+        }
+
+        function createOtherPlayer(id) {
+            const group = new THREE.Group();
+            group.name = id;
+
+            // Head
+            const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+            const headMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.position.y = 1.4;
+            group.add(head);
+
+            // Body
+            const bodyGeo = new THREE.BoxGeometry(0.6, 0.8, 0.3);
+            const bodyColor = getPlayerColor(id);
+            const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.position.y = 0.7;
+            group.add(body);
+
+            // Arms
+            const armGeo = new THREE.BoxGeometry(0.25, 0.8, 0.25);
+            const armMat = bodyMat;
+            const leftArm = new THREE.Mesh(armGeo, armMat);
+            leftArm.position.set(0.5, 0.7, 0);
+            group.add(leftArm);
+
+            const rightArm = new THREE.Mesh(armGeo, armMat);
+            rightArm.position.set(-0.5, 0.7, 0);
+            group.add(rightArm);
+
+            // Legs
+            const legGeo = new THREE.BoxGeometry(0.3, 0.8, 0.3);
+            const legMat = new THREE.MeshLambertMaterial({ color: 0x333366 });
+            const leftLeg = new THREE.Mesh(legGeo, legMat);
+            leftLeg.position.set(0.2, 0, 0);
+            group.add(leftLeg);
+
+            const rightLeg = new THREE.Mesh(legGeo, legMat);
+            rightLeg.position.set(-0.2, 0, 0);
+            group.add(rightLeg);
+
+            // Name tag
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(0, 0, 256, 64);
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 28px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(id.substring(0, 6).toUpperCase(), 128, 40);
+            const texture = new THREE.CanvasTexture(canvas);
+            const nameMesh = new THREE.Mesh(
+                new THREE.PlaneGeometry(1.2, 0.3),
+                new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+            );
+            nameMesh.position.y = 1.8;
+            group.add(nameMesh);
+
+            scene.add(group);
+
+            otherPlayers.set(id, {
+                group,
+                head,
+                targetPos: { x: 0, y: 0, z: 0 },
+                targetRot: { yaw: 0, pitch: 0 },
+                targetCrouch: false,
+                crouch: false,
+                spectator: false
+            });
+        }
+
+        function showNotification(msg, duration = 3000) {
+            const el = document.getElementById('notification');
+            el.innerText = msg;
+            el.style.display = 'block';
+            setTimeout(() => {
+                el.style.display = 'none';
+            }, duration);
+        }
 
         // Socket events
         socket.on('yourId', (id) => {
@@ -658,7 +1322,6 @@
             pickups.forEach(addPickupMesh);
             initSpawners.forEach(s => addResourceSpawner(s.x, s.y, s.z, s.resourceType, s.interval / 1000));
             
-            // Update waiting message
             if (serverGameState === 'waiting') {
                 updateWaitingMessage(playersNeeded);
             }
@@ -666,33 +1329,42 @@
 
         socket.on('playersSnapshot', (others) => {
             others.forEach(({ id, pos, rot, crouch, spectator }) => {
-                if (spectator) return; // Don't create spectator players
+                if (spectator) return;
                 createOtherPlayer(id);
                 const op = otherPlayers.get(id);
                 op.targetPos = pos;
                 op.targetRot = rot;
                 op.targetCrouch = crouch;
+                op.spectator = spectator;
             });
         });
 
         socket.on('newPlayer', ({ id, pos, rot, crouch, spectator }) => {
-            if (spectator) return; // Don't create spectator players
+            if (spectator) return;
             createOtherPlayer(id);
             const op = otherPlayers.get(id);
             op.targetPos = pos;
             op.targetRot = rot;
             op.targetCrouch = crouch;
+            op.spectator = spectator;
         });
 
         socket.on('playersUpdate', (states) => {
             states.forEach(({ id, pos, rot, crouch, spectator }) => {
                 if (id === playerId) return;
-                const op = otherPlayers.get(id);
+                let op = otherPlayers.get(id);
+                if (!op && !spectator) {
+                    createOtherPlayer(id);
+                    op = otherPlayers.get(id);
+                }
                 if (op) {
                     op.targetPos = pos;
                     op.targetRot = rot;
                     op.targetCrouch = crouch;
                     op.spectator = spectator;
+                    if (spectator) {
+                        op.group.visible = false;
+                    }
                 }
             });
         });
@@ -736,7 +1408,6 @@
             velocity.set(0, 0, 0);
         });
 
-        // NEW: Bed destruction - just show notification, block removal handled by server
         socket.on('bedDestroyed', () => {
             showNotification('Your bed was destroyed!');
         });
@@ -747,13 +1418,13 @@
 
         socket.on('countdown', (sec) => {
             showNotification(`Starting in ${sec}`, 1100);
-            updateWaitingMessage(0); // Hide waiting message
+            updateWaitingMessage(0);
         });
 
         socket.on('gameStart', () => {
             showNotification('GO!');
             isInRound = true;
-            startRoundTimer(900); // 15 minutes
+            startRoundTimer(900);
         });
 
         socket.on('gameEnd', ({ winner }) => {
@@ -787,20 +1458,17 @@
             currency = data.currency;
             updateUI();
             velocity.set(0, 0, 0);
-            setSpectatorMode(false); // Reset spectator mode
+            setSpectatorMode(false);
         });
 
-        // NEW: Set spectator mode
         socket.on('setSpectator', (spectator) => {
             setSpectatorMode(spectator);
         });
 
-        // NEW: Update waiting message
         socket.on('updateWaiting', (playersNeeded) => {
             updateWaitingMessage(playersNeeded);
         });
 
-        // NEW: Update timer
         socket.on('updateTimer', (timeRemaining) => {
             roundTimeRemaining = timeRemaining;
             updateTimerDisplay(timeRemaining);
