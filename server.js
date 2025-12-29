@@ -136,6 +136,10 @@ function getPlayersNeeded() {
     return Math.max(0, REQUIRED_PLAYERS - activePlayers);
 }
 
+function getActivePlayers() {
+    return Array.from(players.values()).filter(p => !p.spectator);
+}
+
 function updateWaitingMessages() {
     const playersNeeded = getPlayersNeeded();
     io.emit('updateWaiting', playersNeeded);
@@ -154,11 +158,14 @@ function startRoundTimer() {
         
         if (timeRemaining <= 0) {
             clearInterval(roundTimerInterval);
+            roundTimerInterval = null;
             
-            const activePlayers = Array.from(players.entries()).filter(([id, p]) => !p.spectator);
+            const activePlayers = getActivePlayers();
             if (activePlayers.length > 0) {
-                const winnerId = activePlayers[0][0];
+                const winnerId = Array.from(players.entries()).find(([id, p]) => !p.spectator)[0];
                 io.emit('gameEnd', { winner: winnerId });
+            } else {
+                io.emit('gameEnd', { winner: null });
             }
             
             setTimeout(resetGame, 5000);
@@ -362,11 +369,11 @@ io.on('connection', (socket) => {
 
     // Start countdown if enough players
     if (gameState === 'waiting') {
-        const activePlayers = Array.from(players.values()).filter(p => !p.spectator).length;
+        const activePlayers = getActivePlayers();
         const totalPlayers = players.size;
         updateWaitingMessages();
         
-        if (totalPlayers >= REQUIRED_PLAYERS && !countdownTimer) {
+        if (totalPlayers >= REQUIRED_PLAYERS && activePlayers.length < REQUIRED_PLAYERS && !countdownTimer) {
             let count = 10;
             io.emit('notification', 'Game starting in 10 seconds!');
             
@@ -377,10 +384,9 @@ io.on('connection', (socket) => {
                 if (count < 0) {
                     clearInterval(countdownTimer);
                     countdownTimer = null;
-                    gameState = 'playing';
-                    roundStartTime = Date.now();
                     
                     // Assign beds and teleport players to islands
+                    const assignedPlayers = [];
                     players.forEach((p, id) => {
                         if (p.spectator) {
                             const assignment = assignPlayerToIsland(id);
@@ -390,6 +396,7 @@ io.on('connection', (socket) => {
                                 p.pos = assignment.pos;
                                 p.rot = assignment.rot;
                                 p.bedPos = assignment.bedPos;
+                                assignedPlayers.push(id);
                                 
                                 // Send player their new state
                                 io.to(id).emit('assignBed', assignment);
@@ -398,13 +405,33 @@ io.on('connection', (socket) => {
                         }
                     });
                     
-                    // Start resource spawning
-                    spawners.forEach(s => s.lastSpawn = Date.now());
-                    
-                    // Start round timer
-                    startRoundTimer();
-                    
-                    io.emit('gameStart');
+                    // Only start game if we have at least 2 players assigned
+                    const activeAfterAssignment = getActivePlayers();
+                    if (activeAfterAssignment.length >= REQUIRED_PLAYERS) {
+                        gameState = 'playing';
+                        roundStartTime = Date.now();
+                        
+                        // Start resource spawning
+                        spawners.forEach(s => s.lastSpawn = Date.now());
+                        
+                        // Start round timer
+                        startRoundTimer();
+                        
+                        io.emit('gameStart');
+                    } else {
+                        // Not enough players got assigned, cancel game
+                        io.emit('notification', 'Not enough players assigned. Waiting...');
+                        assignedPlayers.forEach(id => {
+                            const p = players.get(id);
+                            p.spectator = true;
+                            p.bedPos = null;
+                            io.to(id).emit('setSpectator', true);
+                        });
+                        // Free up occupied islands
+                        occupiedIronIslands = [];
+                        // Remove any beds that were placed
+                        initWorld();
+                    }
                 }
             }, 1000);
         }
@@ -577,12 +604,28 @@ io.on('connection', (socket) => {
         updateWaitingMessages();
         
         if (gameState === 'waiting' && countdownTimer) {
-            const activePlayers = Array.from(players.values()).filter(p => !p.spectator).length;
+            const activePlayers = getActivePlayers();
             const totalPlayers = players.size;
-            if (totalPlayers < REQUIRED_PLAYERS) {
+            if (totalPlayers < REQUIRED_PLAYERS || activePlayers.length < REQUIRED_PLAYERS) {
                 clearInterval(countdownTimer);
                 countdownTimer = null;
                 io.emit('notification', 'Not enough players. Waiting...');
+                // Free up any occupied islands
+                occupiedIronIslands = [];
+                initWorld();
+            }
+        } else if (gameState === 'playing') {
+            const activePlayers = getActivePlayers();
+            if (activePlayers.length <= 1) {
+                // End game if only 0 or 1 active players left
+                if (activePlayers.length === 1) {
+                    const winnerId = activePlayers[0].id;
+                    io.emit('gameEnd', { winner: winnerId });
+                } else {
+                    io.emit('gameEnd', { winner: null });
+                }
+                stopRoundTimer();
+                setTimeout(resetGame, 5000);
             }
         }
     });
@@ -626,7 +669,7 @@ setInterval(() => {
                 } else {
                     // Player eliminated - become spectator
                     p.spectator = true;
-                    p.pos = { x: 0, y: 50, z: 0 };
+                    p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
                     io.to(id).emit('setSpectator', true);
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
                     io.to(id).emit('notification', 'Eliminated! You are now a spectator.');
@@ -651,16 +694,18 @@ setInterval(() => {
             }
         });
 
-        // Check for winner
-        const activePlayers = Array.from(players.values()).filter(p => !p.spectator);
-        if (activePlayers.length === 1) {
+        // Check for winner - only if game is still playing
+        const activePlayers = getActivePlayers();
+        if (activePlayers.length === 1 && gameState === 'playing') {
             const winnerId = Array.from(players.entries()).find(([_, p]) => !p.spectator)[0];
             io.emit('gameEnd', { winner: winnerId });
             stopRoundTimer();
+            gameState = 'ended';
             setTimeout(resetGame, 5000);
-        } else if (activePlayers.length === 0) {
+        } else if (activePlayers.length === 0 && gameState === 'playing') {
             io.emit('gameEnd', { winner: null });
             stopRoundTimer();
+            gameState = 'ended';
             setTimeout(resetGame, 5000);
         }
     }
