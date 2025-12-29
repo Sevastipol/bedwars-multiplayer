@@ -1458,6 +1458,14 @@
             });
         }
 
+        function removeOtherPlayer(id) {
+            const op = otherPlayers.get(id);
+            if (op) {
+                scene.remove(op.group);
+                otherPlayers.delete(id);
+            }
+        }
+
         function showNotification(msg, duration = 3000) {
             const el = document.getElementById('notification');
             el.innerText = msg;
@@ -1527,6 +1535,8 @@
                     op.spectator = spectator;
                     if (spectator) {
                         op.group.visible = false;
+                    } else {
+                        op.group.visible = true;
                     }
                 }
             });
@@ -1558,11 +1568,8 @@
         });
 
         socket.on('removePlayer', (id) => {
-            const op = otherPlayers.get(id);
-            if (op) {
-                scene.remove(op.group);
-                otherPlayers.delete(id);
-            }
+            // Remove the player's character from the scene
+            removeOtherPlayer(id);
         });
 
         socket.on('respawn', (data) => {
@@ -1620,23 +1627,46 @@
         });
 
         socket.on('worldReset', (data) => {
-            // Clear existing text sprites
-            resourceSpawners.forEach(spawner => {
+            console.log('World reset received, clearing all blocks...');
+            
+            // Remove all existing blocks
+            blocksInScene.forEach((m) => {
+                scene.remove(m);
+            });
+            blocksInScene.length = 0;
+            blocksMeshes.clear();
+            
+            // Remove all pickups
+            resourcePickups.forEach((m) => {
+                scene.remove(m);
+            });
+            resourcePickups.length = 0;
+            pickupMeshes.clear();
+            
+            // Remove all spawners and their text sprites
+            resourceSpawners.forEach((spawner) => {
+                scene.remove(spawner);
                 if (spawner.userData.textSprite) {
                     scene.remove(spawner.userData.textSprite);
                 }
             });
-            
-            blocksInScene.forEach((m) => scene.remove(m));
-            blocksInScene.length = 0;
-            blocksMeshes.clear();
-            resourcePickups.forEach((m) => scene.remove(m));
-            resourcePickups.length = 0;
-            pickupMeshes.clear();
-            resourceSpawners.forEach((m) => scene.remove(m));
             resourceSpawners.length = 0;
-            data.blocks.forEach(({ x, y, z, type }) => addBlockMesh(x, y, z, type));
+            
+            // Clear other players
+            otherPlayers.forEach((op, id) => {
+                scene.remove(op.group);
+            });
+            otherPlayers.clear();
+            
+            // Add new blocks from server
+            data.blocks.forEach(({ x, y, z, type }) => {
+                addBlockMesh(x, y, z, type);
+            });
+            
+            // Add new pickups
             data.pickups.forEach(addPickupMesh);
+            
+            // Add new spawners
             data.spawners.forEach((s) => {
                 const spawnerMesh = addResourceSpawner(s.x, s.y, s.z, s.resourceType, s.interval, s.lastSpawn);
                 if (s.lastSpawn) {
