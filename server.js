@@ -627,7 +627,7 @@ io.on('connection', (socket) => {
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
         
         // Calculate throw direction based on player rotation
-        const throwPower = 1.2; // Adjust this value for throw distance
+        const throwPower = 1.5;
         const velocity = {
             x: -Math.sin(p.rot.yaw) * Math.cos(p.rot.pitch) * throwPower,
             y: Math.sin(p.rot.pitch) * throwPower,
@@ -640,12 +640,12 @@ io.on('connection', (socket) => {
             id: projectileId,
             owner: socket.id,
             x: p.pos.x,
-            y: p.pos.y + (p.crouch ? 1.3 : 1.6), // Eye height
+            y: p.pos.y + (p.crouch ? 1.3 : 1.6),
             z: p.pos.z,
             vx: velocity.x,
             vy: velocity.y,
             vz: velocity.z,
-            gravity: 0.05,
+            gravity: 0.03,
             createdAt: Date.now(),
             landed: false
         };
@@ -743,6 +743,10 @@ setInterval(() => {
             // Apply gravity
             projectile.vy -= projectile.gravity;
             
+            // Apply air resistance (slight damping)
+            projectile.vx *= 0.99;
+            projectile.vz *= 0.99;
+            
             // Update position
             projectile.x += projectile.vx;
             projectile.y += projectile.vy;
@@ -754,11 +758,11 @@ setInterval(() => {
             const checkZ = Math.floor(projectile.z);
             
             // Check if hit ground
-            if (projectile.y <= 0) {
+            if (projectile.y <= 0.5) {
                 projectile.landed = true;
                 projectile.landTime = now;
                 projectile.landX = projectile.x;
-                projectile.landY = 0.5; // Slightly above ground
+                projectile.landY = 0.5;
                 projectile.landZ = projectile.z;
                 
                 // Teleport player after short delay
@@ -779,7 +783,7 @@ setInterval(() => {
                         projectiles.delete(id);
                         io.emit('removeProjectile', id);
                     }
-                }, 100); // Small delay for visual effect
+                }, 200);
             }
             // Check for collision with blocks
             else if (blocks.has(blockKey(checkX, checkY, checkZ))) {
@@ -793,9 +797,20 @@ setInterval(() => {
                 setTimeout(() => {
                     const player = players.get(projectile.owner);
                     if (player && !player.spectator) {
-                        // Teleport to a safe spot near the impact
+                        // Try to find a safe spot near the impact
+                        let safeY = projectile.landY + 1;
+                        
+                        // Check if the position above is free
+                        for (let offset = 0; offset <= 2; offset++) {
+                            const testY = Math.floor(safeY + offset);
+                            if (!blocks.has(blockKey(checkX, testY, checkZ))) {
+                                safeY = testY + 0.5;
+                                break;
+                            }
+                        }
+                        
                         player.pos.x = projectile.landX;
-                        player.pos.y = projectile.landY + 1;
+                        player.pos.y = safeY;
                         player.pos.z = projectile.landZ;
                         
                         io.to(projectile.owner).emit('teleport', {
@@ -808,11 +823,11 @@ setInterval(() => {
                         projectiles.delete(id);
                         io.emit('removeProjectile', id);
                     }
-                }, 100);
+                }, 200);
             }
             
             // Remove old projectiles (safety)
-            if (now - projectile.createdAt > 10000) { // 10 seconds max
+            if (now - projectile.createdAt > 10000) {
                 projectiles.delete(id);
                 io.emit('removeProjectile', id);
             }
