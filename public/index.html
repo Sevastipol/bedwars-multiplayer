@@ -294,26 +294,33 @@
             pointer-events: none;
         }
 
-        /* Spawner Label */
-        .spawner-label {
+        /* Fullscreen Button */
+        #fullscreen-btn {
             position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: rgba(0,0,0,0.7);
             color: white;
+            border: 2px solid #555;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 100;
+            font-family: 'Segoe UI', sans-serif;
             font-size: 14px;
-            font-weight: bold;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
-            background: rgba(0,0,0,0.5);
-            padding: 2px 6px;
-            border-radius: 4px;
-            pointer-events: none;
-            z-index: 5;
-            text-align: center;
-            min-width: 60px;
-            transform: translate(-50%, -50%);
             display: none;
+        }
+
+        #fullscreen-btn:hover {
+            background: rgba(50,50,50,0.8);
+            border-color: white;
         }
     </style>
 </head>
 <body>
+    <!-- Fullscreen Button -->
+    <button id="fullscreen-btn">Enter Fullscreen</button>
+    
     <!-- Timer Display -->
     <div id="timer">15:00</div>
     
@@ -345,10 +352,7 @@
         <span id="crouch-hint">SHIFT: Crouch</span> | 1-9: Select<br>
         B: Shop<br>
         <span style="color: #ff8888">Hold L-Click: Break</span><br>
-        <span style="color: #88ff88">R-Click: Build</span><br>
-        <span style="color: #8888ff; display: none;" id="spectator-controls-hint">
-            SPECTATOR: SPACE: Fly Up | CTRL/SHIFT: Fly Down
-        </span>
+        <span style="color: #88ff88">R-Click: Build</span>
     </div>
     <div id="break-progress">
         <div id="break-progress-bar"></div>
@@ -377,6 +381,45 @@
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
         const socket = io({ reconnection: true, reconnectionAttempts: 10, reconnectionDelay: 1000 });
+
+        // --- Fullscreen functionality ---
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        let isFullscreen = false;
+
+        fullscreenBtn.addEventListener('click', () => {
+            if (!isFullscreen) {
+                const elem = document.documentElement;
+                if (elem.requestFullscreen) {
+                    elem.requestFullscreen();
+                } else if (elem.webkitRequestFullscreen) { /* Safari */
+                    elem.webkitRequestFullscreen();
+                } else if (elem.msRequestFullscreen) { /* IE11 */
+                    elem.msRequestFullscreen();
+                }
+                isFullscreen = true;
+                fullscreenBtn.textContent = 'Exit Fullscreen';
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) { /* Safari */
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) { /* IE11 */
+                    document.msExitFullscreen();
+                }
+                isFullscreen = false;
+                fullscreenBtn.textContent = 'Enter Fullscreen';
+            }
+        });
+
+        // Listen for fullscreen change events
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('msfullscreenchange', handleFullscreenChange);
+
+        function handleFullscreenChange() {
+            isFullscreen = !!document.fullscreenElement;
+            fullscreenBtn.textContent = isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen';
+        }
 
         // Hide loading when connected
         socket.on('connect', () => {
@@ -427,10 +470,6 @@
         let pickupMeshes = new Map();
         let otherPlayers = new Map();
 
-        // Spawner tracking
-        let spawnerLabels = new Map();
-        let spawnerPositions = new Map();
-
         // --- Timer Functions ---
         function updateTimerDisplay(seconds) {
             const timerElement = document.getElementById('timer');
@@ -471,26 +510,25 @@
         function setSpectatorMode(spectator) {
             isSpectator = spectator;
             const indicator = document.getElementById('spectator-indicator');
-            const spectatorHint = document.getElementById('spectator-controls-hint');
             
             if (spectator) {
                 indicator.style.display = 'block';
-                spectatorHint.style.display = 'block';
                 document.getElementById('stats').style.display = 'none';
                 document.getElementById('hotbar-container').style.display = 'none';
                 document.getElementById('crosshair').style.display = 'none';
-                document.getElementById('controls-hint').style.display = 'block';
+                document.getElementById('controls-hint').style.display = 'none';
                 document.getElementById('break-progress').style.display = 'none';
                 document.getElementById('timer').style.display = 'none';
                 velocity.y = 0;
                 onGround = true;
+                fullscreenBtn.style.display = 'block';
             } else {
                 indicator.style.display = 'none';
-                spectatorHint.style.display = 'none';
                 document.getElementById('stats').style.display = 'block';
                 document.getElementById('hotbar-container').style.display = 'flex';
                 document.getElementById('crosshair').style.display = 'block';
                 document.getElementById('controls-hint').style.display = 'block';
+                fullscreenBtn.style.display = 'none';
                 if (isInRound) {
                     document.getElementById('timer').style.display = 'block';
                 }
@@ -506,53 +544,6 @@
             } else {
                 messageElement.style.display = 'none';
             }
-        }
-
-        // --- Spawner Label Functions ---
-        function createSpawnerLabel(spawner) {
-            // Remove existing label if it exists
-            const existingLabel = spawnerLabels.get(spawner.id);
-            if (existingLabel) {
-                existingLabel.remove();
-            }
-            
-            // Create a new label element
-            const label = document.createElement('div');
-            label.className = 'spawner-label';
-            label.id = `spawner-${spawner.id}`;
-            label.textContent = `${spawner.resourceType}: ${spawner.totalCollected}`;
-            
-            // Set color based on resource type
-            if (spawner.resourceType === 'iron') label.style.color = '#a0a0a0';
-            else if (spawner.resourceType === 'gold') label.style.color = '#ffd700';
-            else if (spawner.resourceType === 'emerald') label.style.color = '#00ff88';
-            
-            document.body.appendChild(label);
-            spawnerLabels.set(spawner.id, label);
-            
-            return label;
-        }
-
-        function updateSpawnerLabelPositions() {
-            spawnerLabels.forEach((label, spawnerId) => {
-                const spawnerPos = spawnerPositions.get(spawnerId);
-                if (spawnerPos) {
-                    const vector = new THREE.Vector3(spawnerPos.x, spawnerPos.y + 2, spawnerPos.z);
-                    vector.project(camera);
-                    
-                    const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
-                    const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
-                    
-                    // Only show label if it's in front of the camera and within a reasonable distance
-                    if (vector.z < 1 && vector.z > -1) {
-                        label.style.display = 'block';
-                        label.style.left = `${x}px`;
-                        label.style.top = `${y}px`;
-                    } else {
-                        label.style.display = 'none';
-                    }
-                }
-            });
         }
 
         // --- Three.js Setup ---
@@ -693,7 +684,7 @@
             }
         }
 
-        function addResourceSpawner(x, y, z, resourceType, interval) {
+        function addResourceSpawner(x, y, z, resourceType, interval, lastSpawn = null) {
             const colors = { iron: 0xa0a0a0, gold: 0xffd700, emerald: 0x00ff88 };
             const spawner = new THREE.Mesh(
                 new THREE.SphereGeometry(0.3, 16, 16),
@@ -706,9 +697,120 @@
                 })
             );
             spawner.position.set(x, y, z);
-            spawner.userData = { type: 'spawner', resourceType: resourceType, lastSpawn: Date.now(), interval: interval * 1000 };
+            
+            // Store spawner data with additional properties
+            const spawnerData = {
+                type: 'spawner',
+                resourceType: resourceType,
+                interval: interval * 1000,
+                lastSpawn: lastSpawn || Date.now(),
+                x: x, y: y, z: z,
+                id: `${x}-${y}-${z}-${resourceType}`,
+                count: 0, // Count of resources underneath
+                textSprite: null,
+                textTexture: null
+            };
+            spawner.userData = spawnerData;
+            
+            // Create text sprite for the generator
+            createGeneratorText(spawner);
+            
             scene.add(spawner);
             resourceSpawners.push(spawner);
+            return spawner;
+        }
+
+        // Function to create text above generator
+        function createGeneratorText(spawner) {
+            // Create canvas for text
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 128;
+            const context = canvas.getContext('2d');
+            
+            // Set up text properties
+            context.font = 'bold 24px Arial';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            
+            // Create sprite with the canvas as texture
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ 
+                map: texture, 
+                transparent: true,
+                opacity: 0.8
+            });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            
+            // Position text above generator
+            sprite.position.set(spawner.position.x, spawner.position.y + 1.5, spawner.position.z);
+            sprite.scale.set(2, 1, 1);
+            sprite.userData = { type: 'generator_text', spawnerId: spawner.userData.id };
+            
+            scene.add(sprite);
+            spawner.userData.textSprite = sprite;
+            spawner.userData.textTexture = texture;
+            
+            return sprite;
+        }
+
+        // Function to update generator text
+        function updateGeneratorText(spawner) {
+            if (!spawner.userData.textSprite || !spawner.userData.textTexture) return;
+            
+            const now = Date.now();
+            const timeUntilNext = Math.max(0, (spawner.userData.lastSpawn + spawner.userData.interval - now) / 1000);
+            
+            // Count resources underneath (within 2 blocks horizontally)
+            let resourceCount = 0;
+            resourcePickups.forEach(pickup => {
+                if (pickup.userData.resourceType === spawner.userData.resourceType) {
+                    const dx = Math.abs(pickup.position.x - spawner.position.x);
+                    const dz = Math.abs(pickup.position.z - spawner.position.z);
+                    if (dx < 2 && dz < 2 && pickup.position.y < spawner.position.y + 1) {
+                        resourceCount++;
+                    }
+                }
+            });
+            
+            spawner.userData.count = resourceCount;
+            
+            // Update canvas texture
+            const canvas = spawner.userData.textTexture.image;
+            const context = canvas.getContext('2d');
+            
+            // Clear canvas
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw background
+            context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw resource type
+            context.fillStyle = getResourceColor(spawner.userData.resourceType);
+            context.fillText(spawner.userData.resourceType.toUpperCase(), canvas.width / 2, 30);
+            
+            // Draw time until next drop
+            context.fillStyle = '#ffffff';
+            context.font = '20px Arial';
+            context.fillText(`Next: ${timeUntilNext.toFixed(1)}s`, canvas.width / 2, 60);
+            
+            // Draw resource count
+            context.fillStyle = '#ffff88';
+            context.font = 'bold 22px Arial';
+            context.fillText(`${resourceCount} under`, canvas.width / 2, 90);
+            
+            // Update texture
+            spawner.userData.textTexture.needsUpdate = true;
+        }
+
+        function getResourceColor(resourceType) {
+            switch(resourceType) {
+                case 'iron': return '#a0a0a0';
+                case 'gold': return '#ffd700';
+                case 'emerald': return '#00ff88';
+                default: return '#ffffff';
+            }
         }
 
         function addPickupMesh(data) {
@@ -769,19 +871,9 @@
                     case 'KeyS': moveState.bwd = true; break;
                     case 'KeyA': moveState.l = true; break;
                     case 'KeyD': moveState.r = true; break;
-                    case 'Space': 
-                        e.preventDefault();
-                        velocity.y = 5;
-                        break;
-                    case 'ControlLeft':
-                    case 'ControlRight':
-                        e.preventDefault();
-                        velocity.y = -5;
-                        break;
+                    case 'Space': velocity.y = 5; break;
                     case 'ShiftLeft':
-                    case 'ShiftRight':
-                        velocity.y = -5;
-                        break;
+                    case 'ShiftRight': velocity.y = -5; break;
                 }
                 return;
             }
@@ -829,12 +921,8 @@
                     case 'KeyA': moveState.l = false; break;
                     case 'KeyD': moveState.r = false; break;
                     case 'Space':
-                    case 'ControlLeft':
-                    case 'ControlRight':
                     case 'ShiftLeft':
-                    case 'ShiftRight':
-                        velocity.y = 0;
-                        break;
+                    case 'ShiftRight': velocity.y = 0; break;
                 }
                 return;
             }
@@ -977,6 +1065,7 @@
         }
 
         let prevTime = performance.now();
+        let lastGeneratorUpdate = 0;
 
         function animate() {
             requestAnimationFrame(animate);
@@ -984,9 +1073,12 @@
             const delta = Math.min((time - prevTime) / 1000, 0.05);
             prevTime = time;
 
-            // Update spawner labels
-            if (spawnerLabels.size > 0) {
-                updateSpawnerLabelPositions();
+            // Update generator text every 100ms (not every frame for performance)
+            if (time - lastGeneratorUpdate > 100) {
+                resourceSpawners.forEach(spawner => {
+                    updateGeneratorText(spawner);
+                });
+                lastGeneratorUpdate = time;
             }
 
             // Breaking logic
@@ -1069,9 +1161,8 @@
                         controls.moveForward(direction.z * speed * delta);
                     }
                     
-                    // Spectator vertical movement
                     camera.position.y += velocity.y * delta;
-                    
+                    velocity.y = 0;
                     onGround = true;
                 } else {
                     velocity.y -= 20.0 * delta;
@@ -1413,24 +1504,24 @@
         // Socket events
         socket.on('yourId', (id) => {
             playerId = id;
+            // Start as spectator
             setSpectatorMode(true);
         });
 
         socket.on('initWorld', ({ blocks, pickups, spawners: initSpawners, gameState: serverGameState, playersNeeded }) => {
             blocks.forEach(({ x, y, z, type }) => addBlockMesh(x, y, z, type));
             pickups.forEach(addPickupMesh);
-            initSpawners.forEach(s => addResourceSpawner(s.x, s.y, s.z, s.resourceType, s.interval / 1000));
+            initSpawners.forEach(s => {
+                const spawnerMesh = addResourceSpawner(s.x, s.y, s.z, s.resourceType, s.interval, s.lastSpawn);
+                // Update spawner data with server's lastSpawn
+                if (s.lastSpawn) {
+                    spawnerMesh.userData.lastSpawn = s.lastSpawn;
+                }
+            });
             
             if (serverGameState === 'waiting') {
                 updateWaitingMessage(playersNeeded);
             }
-        });
-
-        socket.on('initSpawners', (spawnerData) => {
-            spawnerData.forEach(spawner => {
-                spawnerPositions.set(spawner.id, { x: spawner.x, y: spawner.y, z: spawner.z });
-                createSpawnerLabel(spawner);
-            });
         });
 
         socket.on('playersSnapshot', (others) => {
@@ -1534,13 +1625,16 @@
         });
 
         socket.on('assignBed', (data) => {
+            // Player gets assigned a bed and becomes active player
             showNotification(`Assigned to Iron Island!`, 3000);
             setSpectatorMode(false);
             
+            // Teleport to assigned island
             camera.position.set(data.pos.x, data.pos.y, data.pos.z);
             camera.rotation.set(data.rot.pitch, data.rot.yaw, 0);
             velocity.set(0, 0, 0);
             
+            // Update inventory and currency
             inventory = data.inventory;
             currency = data.currency;
             updateUI();
@@ -1554,10 +1648,17 @@
             }
             isInRound = false;
             stopRoundTimer();
-            setSpectatorMode(true);
+            setSpectatorMode(true); // Become spectator after game ends
         });
 
         socket.on('worldReset', (data) => {
+            // Clear existing text sprites
+            resourceSpawners.forEach(spawner => {
+                if (spawner.userData.textSprite) {
+                    scene.remove(spawner.userData.textSprite);
+                }
+            });
+            
             blocksInScene.forEach((m) => scene.remove(m));
             blocksInScene.length = 0;
             blocksMeshes.clear();
@@ -1566,15 +1667,16 @@
             pickupMeshes.clear();
             resourceSpawners.forEach((m) => scene.remove(m));
             resourceSpawners.length = 0;
-            
             data.blocks.forEach(({ x, y, z, type }) => addBlockMesh(x, y, z, type));
             data.pickups.forEach(addPickupMesh);
-            data.spawners.forEach((s) => addResourceSpawner(s.x, s.y, s.z, s.resourceType, s.interval / 1000));
+            data.spawners.forEach((s) => {
+                const spawnerMesh = addResourceSpawner(s.x, s.y, s.z, s.resourceType, s.interval, s.lastSpawn);
+                if (s.lastSpawn) {
+                    spawnerMesh.userData.lastSpawn = s.lastSpawn;
+                }
+            });
             
-            spawnerLabels.forEach(label => label.remove());
-            spawnerLabels.clear();
-            spawnerPositions.clear();
-            
+            // Reset to spectator mode after world reset
             setSpectatorMode(true);
         });
 
@@ -1604,26 +1706,6 @@
             } else {
                 document.getElementById('timer').style.display = 'none';
             }
-        });
-
-        socket.on('updateSpawner', (spawnerData) => {
-            const label = spawnerLabels.get(spawnerData.id);
-            if (label) {
-                label.textContent = `${spawnerData.resourceType}: ${spawnerData.totalCollected}`;
-            } else {
-                createSpawnerLabel(spawnerData);
-            }
-        });
-
-        socket.on('updateAllSpawners', (spawnerData) => {
-            spawnerLabels.forEach(label => label.remove());
-            spawnerLabels.clear();
-            spawnerPositions.clear();
-            
-            spawnerData.forEach(spawner => {
-                spawnerPositions.set(spawner.id, { x: spawner.x, y: spawner.y, z: spawner.z });
-                createSpawnerLabel(spawner);
-            });
         });
 
         // Start as spectator
