@@ -768,24 +768,26 @@
         function createEnderpearlMesh(data) {
             if (!enderpearlTexture) return null;
             
-            // Create a sprite (billboard) for the enderpearl
+            // Create a sprite (billboard) for the enderpearl with size attenuation
             const spriteMaterial = new THREE.SpriteMaterial({ 
                 map: enderpearlTexture,
                 transparent: true,
                 opacity: 0.9,
-                sizeAttenuation: false
+                sizeAttenuation: true  // Enable size attenuation for distance-based scaling
             });
             
             const pearl = new THREE.Sprite(spriteMaterial);
             pearl.position.set(data.x, data.y, data.z);
-            pearl.scale.set(0.25, 0.25, 1); // Make it smaller like Minecraft enderpearl
             
-            // Store rotation for spinning effect
+            // Initial base size - will be adjusted based on distance
+            const baseScale = 0.3;
+            pearl.scale.set(baseScale, baseScale, 1);
+            
+            // Store data for updating - NO SPINNING DATA
             pearl.userData = { 
                 id: data.id, 
                 type: 'enderpearl',
-                rotation: 0,
-                spinSpeed: 0.3
+                baseScale: baseScale
             };
             scene.add(pearl);
             
@@ -800,12 +802,24 @@
             if (pearl) {
                 pearl.position.set(position.x, position.y, position.z);
                 
-                // Make sprite always face camera
+                // Make sprite always face camera (billboard effect)
                 pearl.lookAt(camera.position);
                 
-                // Rotate the sprite for spinning effect
-                pearl.userData.rotation += pearl.userData.spinSpeed;
-                pearl.material.rotation = pearl.userData.rotation;
+                // Calculate distance from camera
+                const distance = camera.position.distanceTo(pearl.position);
+                
+                // Scale based on distance: closer = bigger, farther = smaller
+                // Using inverse relationship: scale = baseScale * (constant / distance)
+                const baseScale = pearl.userData.baseScale || 0.3;
+                const constant = 5; // Adjust this to control scaling sensitivity
+                let scale = baseScale * (constant / Math.max(1, distance));
+                
+                // Clamp the scale to reasonable limits
+                scale = Math.max(0.1, Math.min(scale, 1.0));
+                
+                pearl.scale.set(scale, scale, 1);
+                
+                // NO SPINNING - removed rotation update
             }
         }
 
@@ -1257,14 +1271,8 @@
 
             const now = Date.now();
 
-            // Update enderpearl rotations
-            projectiles.forEach((pearl) => {
-                if (pearl.userData) {
-                    // Sprites automatically face camera, just update rotation for spinning
-                    pearl.userData.rotation += pearl.userData.spinSpeed;
-                    pearl.material.rotation = pearl.userData.rotation;
-                }
-            });
+            // Enderpearls are updated by server events, no need for client-side updates
+            // They already face camera and scale based on distance in updateEnderpearl function
 
             resourceSpawners.forEach(spawner => {
                 const pulseSpeed = 2;
@@ -1835,7 +1843,7 @@
         });
 
         socket.on('bedDestroyed', () => {
-            showNotification('Your bed was destroyed!');
+            showNotification('Your bed was destroyed! You will not respawn!', 5000);
         });
 
         socket.on('notification', (msg) => {
