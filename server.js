@@ -745,7 +745,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Enderpearl throwing (Minecraft-style)
+    // Enderpearl throwing (Minecraft-style) - IMPROVED PHYSICS
     socket.on('throwEnderpearl', () => {
         const p = players.get(socket.id);
         if (p.spectator) return;
@@ -767,29 +767,42 @@ io.on('connection', (socket) => {
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
         
         // Calculate throw direction based on player rotation (Minecraft-style)
-        const throwPower = 1.5;
+        const throwPower = 1.5; // Minecraft-like throw strength
+        
+        // Convert yaw and pitch to radians if they're in degrees
+        const yawRad = p.rot.yaw;
+        const pitchRad = p.rot.pitch;
+        
+        // Calculate velocity components (Minecraft formula)
         const velocity = {
-            x: -Math.sin(p.rot.yaw) * Math.cos(p.rot.pitch) * throwPower,
-            y: Math.sin(p.rot.pitch) * throwPower,
-            z: -Math.cos(p.rot.yaw) * Math.cos(p.rot.pitch) * throwPower
+            x: -Math.sin(yawRad) * Math.cos(pitchRad) * throwPower,
+            y: -Math.sin(pitchRad) * throwPower, // Negative because in Minecraft, looking down gives positive pitch
+            z: -Math.cos(yawRad) * Math.cos(pitchRad) * throwPower
         };
         
-        // Create enderpearl entity
+        // Create enderpearl entity with proper physics
         const pearlId = `pearl-${socket.id}-${Date.now()}`;
         const pearl = {
             id: pearlId,
             owner: socket.id,
             x: p.pos.x,
-            y: p.pos.y + (p.crouch ? 1.3 : 1.6),
+            y: p.pos.y + (p.crouch ? 1.3 : 1.6), // Start at eye level
             z: p.pos.z,
             vx: velocity.x,
             vy: velocity.y,
             vz: velocity.z,
-            gravity: 0.03,
-            drag: 0.99,
+            gravity: 0.03, // Minecraft-like gravity
+            drag: 0.99, // Air resistance
+            lastUpdate: Date.now(),
             createdAt: Date.now(),
-            landed: false
+            landed: false,
+            hasMoved: false // Track if the pearl has actually moved
         };
+        
+        // Add a small forward offset to prevent immediate collision
+        pearl.x += velocity.x * 0.1;
+        pearl.y += velocity.y * 0.1;
+        pearl.z += velocity.z * 0.1;
         
         enderpearls.set(pearlId, pearl);
         
@@ -882,50 +895,72 @@ setInterval(() => {
             suddenDeath = true;
         }
 
-        // Update enderpearls
+        // Update enderpearls with improved physics
         const pearlUpdates = [];
         enderpearls.forEach((pearl, id) => {
             if (pearl.landed) return;
             
-            // Apply air resistance
-            pearl.vx *= pearl.drag;
-            pearl.vy *= pearl.drag;
-            pearl.vz *= pearl.drag;
+            const deltaTime = (now - pearl.lastUpdate) / 1000; // Convert to seconds
+            if (deltaTime <= 0) return;
             
-            // Apply gravity
-            pearl.vy -= pearl.gravity;
+            pearl.lastUpdate = now;
+            
+            // Apply air resistance
+            pearl.vx *= Math.pow(pearl.drag, deltaTime * 20); // Adjust for frame rate
+            pearl.vy *= Math.pow(pearl.drag, deltaTime * 20);
+            pearl.vz *= Math.pow(pearl.drag, deltaTime * 20);
+            
+            // Apply gravity (only if not already moving up too fast)
+            pearl.vy -= pearl.gravity * deltaTime * 20;
+            
+            // Store old position for collision detection
+            const oldX = pearl.x;
+            const oldY = pearl.y;
+            const oldZ = pearl.z;
             
             // Update position
-            pearl.x += pearl.vx;
-            pearl.y += pearl.vy;
-            pearl.z += pearl.vz;
+            pearl.x += pearl.vx * deltaTime * 20;
+            pearl.y += pearl.vy * deltaTime * 20;
+            pearl.z += pearl.vz * deltaTime * 20;
+            
+            // Mark that the pearl has moved
+            pearl.hasMoved = true;
             
             // Check for collision with blocks or ground
             const checkX = Math.floor(pearl.x);
             const checkY = Math.floor(pearl.y);
             const checkZ = Math.floor(pearl.z);
             
-            if (pearl.y <= 0.1 || blocks.has(blockKey(checkX, checkY, checkZ))) {
+            // Check if pearl has moved enough to avoid immediate collision
+            const distanceMoved = Math.sqrt(
+                Math.pow(pearl.x - oldX, 2) + 
+                Math.pow(pearl.y - oldY, 2) + 
+                Math.pow(pearl.z - oldZ, 2)
+            );
+            
+            if (pearl.y <= 0.1 || (blocks.has(blockKey(checkX, checkY, checkZ)) && distanceMoved > 0.1)) {
                 pearl.landed = true;
                 
                 // Teleport player
                 const player = players.get(pearl.owner);
-                if (player && !player.spectator) {
+                if (player && !player.spectator && pearl.hasMoved) {
                     // Find safe teleport position
+                    let teleportX = pearl.x;
                     let teleportY = Math.max(0.5, pearl.y);
+                    let teleportZ = pearl.z;
                     
-                    // Try to find a safe spot above
+                    // Try to find a safe spot above (like Minecraft does)
                     for (let yOffset = 1; yOffset <= 3; yOffset++) {
-                        const checkKey = blockKey(checkX, Math.floor(pearl.y + yOffset), checkZ);
+                        const checkKey = blockKey(Math.floor(teleportX), Math.floor(teleportY + yOffset), Math.floor(teleportZ));
                         if (!blocks.has(checkKey)) {
-                            teleportY = pearl.y + yOffset;
+                            teleportY = pearl.y + yOffset - 0.1; // -0.1 to be slightly above ground
                             break;
                         }
                     }
                     
-                    player.pos.x = pearl.x;
+                    player.pos.x = teleportX;
                     player.pos.y = teleportY;
-                    player.pos.z = pearl.z;
+                    player.pos.z = teleportZ;
                     
                     io.to(pearl.owner).emit('teleport', {
                         x: player.pos.x,
@@ -937,7 +972,7 @@ setInterval(() => {
                 // Remove enderpearl
                 enderpearls.delete(id);
                 io.emit('removeEnderpearl', id);
-            } else if (now - pearl.createdAt > 10000) {
+            } else if (now - pearl.createdAt > 30000) { // 30 second timeout
                 // Remove old enderpearls
                 enderpearls.delete(id);
                 io.emit('removeEnderpearl', id);
@@ -951,7 +986,7 @@ setInterval(() => {
             }
         });
         
-        // Send enderpearl updates
+        // Send enderpearl updates more frequently for smoother animation
         if (pearlUpdates.length > 0) {
             io.emit('updateEnderpearl', pearlUpdates);
         }
@@ -1026,7 +1061,7 @@ setInterval(() => {
         health: p.health
     }));
     io.emit('playersUpdate', states);
-}, 50);
+}, 50); // 20 FPS game loop
 
 // Start player check on server start
 startPlayerCheck();
