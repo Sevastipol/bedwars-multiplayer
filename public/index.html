@@ -324,6 +324,26 @@
         #fullscreen-overlay button:hover {
             background: #45a049;
         }
+
+        /* Health bar for players */
+        .health-bar {
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 40px;
+            height: 4px;
+            background: rgba(0,0,0,0.5);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .health-fill {
+            height: 100%;
+            background: #4CAF50;
+            width: 100%;
+            transition: width 0.3s ease;
+        }
     </style>
 </head>
 <body>
@@ -366,7 +386,8 @@
         B: Shop | ESC: Unlock Mouse<br>
         <span style="color: #ff8888">Hold L-Click: Break</span><br>
         <span style="color: #88ff88">R-Click: Build</span><br>
-        <span style="color: #88aaff">Right-Click with Enderpearl: Throw</span>
+        <span style="color: #88aaff">Right-Click with Enderpearl: Throw</span><br>
+        <span style="color: #ff88ff">Click on Players: Attack</span>
     </div>
     <div id="break-progress">
         <div id="break-progress-bar"></div>
@@ -447,6 +468,7 @@
         let blocksMeshes = new Map();
         let pickupMeshes = new Map();
         let otherPlayers = new Map();
+        let playerHealth = new Map(); // Store player health locally
 
         // --- Fullscreen Functions ---
         function enterFullscreen() {
@@ -617,7 +639,7 @@
             iron: 'https://i.ibb.co/n87Ym7RY/pixilart-drawing-7.png',
             gold: 'https://i.ibb.co/27GwzjkT/pixilart-drawing-6.png',
             emerald: 'https://i.ibb.co/hxX4ywxj/pixilart-drawing-8.png',
-            enderpearl: 'https://i.ibb.co/TBmwYFGG/pixil-frame-0-9.png'
+            enderpearl: 'https://i.ibb.co/hDmcm2V6/ender-pearl.png' // Updated to a proper enderpearl image
         };
 
         // Load textures
@@ -742,24 +764,28 @@
             }
         }
 
-        // --- Enderpearl Functions (Minecraft-style) ---
+        // --- Enderpearl Functions (Minecraft-style with sprite) ---
         function createEnderpearlMesh(data) {
             if (!enderpearlTexture) return null;
             
-            // Create a Minecraft-style enderpearl: small sphere with texture
-            const geometry = new THREE.SphereGeometry(0.125, 8, 8); // Small sphere like Minecraft
-            const material = new THREE.MeshBasicMaterial({ 
+            // Create a sprite (billboard) for the enderpearl
+            const spriteMaterial = new THREE.SpriteMaterial({ 
                 map: enderpearlTexture,
                 transparent: true,
-                opacity: 0.9
+                opacity: 0.9,
+                sizeAttenuation: false
             });
             
-            const pearl = new THREE.Mesh(geometry, material);
+            const pearl = new THREE.Sprite(spriteMaterial);
             pearl.position.set(data.x, data.y, data.z);
+            pearl.scale.set(0.3, 0.3, 1); // Make it smaller like Minecraft enderpearl
+            
+            // Store rotation for spinning effect
             pearl.userData = { 
                 id: data.id, 
                 type: 'enderpearl',
-                rotation: 0
+                rotation: 0,
+                spinSpeed: 0.3
             };
             scene.add(pearl);
             
@@ -773,10 +799,13 @@
             const pearl = projectiles.get(id);
             if (pearl) {
                 pearl.position.set(position.x, position.y, position.z);
-                // Rotate the pearl like in Minecraft
-                pearl.userData.rotation += 0.3;
-                pearl.rotation.x = pearl.userData.rotation;
-                pearl.rotation.y = pearl.userData.rotation;
+                
+                // Make sprite always face camera
+                pearl.lookAt(camera.position);
+                
+                // Rotate the sprite for spinning effect
+                pearl.userData.rotation += pearl.userData.spinSpeed;
+                pearl.material.rotation = pearl.userData.rotation;
             }
         }
 
@@ -788,6 +817,7 @@
             }
         }
 
+        // --- Resource Spawners ---
         function addResourceSpawner(x, y, z, resourceType, interval, lastSpawn = null) {
             const colors = { iron: 0xa0a0a0, gold: 0xffd700, emerald: 0x00ff88 };
             const spawner = new THREE.Mesh(
@@ -1032,9 +1062,63 @@
             }
 
             raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
-            const intersects = raycaster.intersectObjects(blocksInScene);
-
-            if (e.button === 2) {
+            
+            if (e.button === 0) { // Left click
+                // First check for player hits
+                const playerObjects = Array.from(otherPlayers.values())
+                    .filter(op => !op.spectator)
+                    .map(op => op.group);
+                
+                if (playerObjects.length > 0) {
+                    const playerIntersects = raycaster.intersectObjects(playerObjects, true);
+                    
+                    if (playerIntersects.length > 0) {
+                        const intersect = playerIntersects[0];
+                        if (intersect.distance > 5) return;
+                        
+                        // Find the player ID by traversing up the object hierarchy
+                        let obj = intersect.object;
+                        while (obj && !otherPlayers.has(obj.name)) {
+                            obj = obj.parent;
+                        }
+                        
+                        if (obj && otherPlayers.has(obj.name)) {
+                            socket.emit('hitPlayer', obj.name);
+                            return;
+                        }
+                    }
+                }
+                
+                // If no player hit, check for blocks
+                const blockIntersects = raycaster.intersectObjects(blocksInScene);
+                if (blockIntersects.length > 0) {
+                    const obj = blockIntersects[0].object;
+                    if (blockIntersects[0].distance > 5) return;
+                    if (obj.userData.type !== 'spawner') {
+                        const type = obj.userData.type || 'Grass';
+                        isBreaking = true;
+                        breakingBlock = obj;
+                        breakingStartTime = Date.now();
+                        breakingDuration = BLOCK_TYPES[type].breakTime * 1000;
+                        document.getElementById('break-progress').style.display = 'block';
+                        
+                        if (!breakingOverlay && breakingTextures.length > 0) {
+                            const overlayMaterial = new THREE.MeshBasicMaterial({
+                                map: breakingTextures[0],
+                                transparent: true,
+                                opacity: 0.8,
+                                depthWrite: false
+                            });
+                            breakingOverlay = new THREE.Mesh(
+                                new THREE.BoxGeometry(1.01, 1.01, 1.01),
+                                overlayMaterial
+                            );
+                            breakingOverlay.position.copy(obj.position);
+                            scene.add(breakingOverlay);
+                        }
+                    }
+                }
+            } else if (e.button === 2) { // Right click
                 const currentSlot = inventory[selectedSlotIndex];
                 
                 // Check if we have an enderpearl selected
@@ -1045,8 +1129,9 @@
                 }
                 
                 // Regular block placement
-                if (intersects.length > 0 && currentSlot && currentSlot.count > 0) {
-                    const intersect = intersects[0];
+                const blockIntersects = raycaster.intersectObjects(blocksInScene);
+                if (blockIntersects.length > 0 && currentSlot && currentSlot.count > 0) {
+                    const intersect = blockIntersects[0];
                     if (intersect.distance > 5) return;
                     const pos = intersect.point.clone().add(intersect.face.normal.multiplyScalar(0.5));
 
@@ -1073,34 +1158,6 @@
                     if (canPlace) {
                         const type = currentSlot.type;
                         socket.emit('placeAttempt', { x: blockX, y: blockY, z: blockZ, type });
-                    }
-                }
-            } else if (e.button === 0) {
-                if (intersects.length > 0) {
-                    const obj = intersects[0].object;
-                    if (intersects[0].distance > 5) return;
-                    if (obj.userData.type !== 'spawner') {
-                        const type = obj.userData.type || 'Grass';
-                        isBreaking = true;
-                        breakingBlock = obj;
-                        breakingStartTime = Date.now();
-                        breakingDuration = BLOCK_TYPES[type].breakTime * 1000;
-                        document.getElementById('break-progress').style.display = 'block';
-                        
-                        if (!breakingOverlay && breakingTextures.length > 0) {
-                            const overlayMaterial = new THREE.MeshBasicMaterial({
-                                map: breakingTextures[0],
-                                transparent: true,
-                                opacity: 0.8,
-                                depthWrite: false
-                            });
-                            breakingOverlay = new THREE.Mesh(
-                                new THREE.BoxGeometry(1.01, 1.01, 1.01),
-                                overlayMaterial
-                            );
-                            breakingOverlay.position.copy(obj.position);
-                            scene.add(breakingOverlay);
-                        }
                     }
                 }
             }
@@ -1203,9 +1260,9 @@
             // Update enderpearl rotations
             projectiles.forEach((pearl) => {
                 if (pearl.userData) {
-                    pearl.userData.rotation += 0.3;
-                    pearl.rotation.x = pearl.userData.rotation;
-                    pearl.rotation.y = pearl.userData.rotation;
+                    // Sprites automatically face camera, just update rotation for spinning
+                    pearl.userData.rotation += pearl.userData.spinSpeed;
+                    pearl.material.rotation = pearl.userData.rotation;
                 }
             });
 
@@ -1327,7 +1384,7 @@
                 lastPlayerUpdate = time;
             }
 
-            otherPlayers.forEach((data) => {
+            otherPlayers.forEach((data, id) => {
                 if (data.spectator) {
                     data.group.visible = false;
                     return;
@@ -1342,6 +1399,13 @@
                     data.crouch = data.targetCrouch;
                 }
                 data.group.scale.y = data.crouch ? 0.75 : 1;
+                
+                // Update health bar
+                if (data.healthBar && playerHealth.has(id)) {
+                    const health = playerHealth.get(id);
+                    data.healthBar.style.width = `${health * 10}%`;
+                    data.healthBar.style.backgroundColor = health > 5 ? '#4CAF50' : health > 2 ? '#FFA500' : '#FF0000';
+                }
             });
 
             renderer.render(scene, camera);
@@ -1515,7 +1579,7 @@
             return color;
         }
 
-        function createOtherPlayer(id) {
+        function createOtherPlayer(id, health = 10) {
             const group = new THREE.Group();
             group.name = id;
 
@@ -1559,15 +1623,19 @@
             ctx.fillStyle = 'rgba(0,0,0,0.7)';
             ctx.fillRect(0, 0, 256, 64);
             ctx.fillStyle = 'white';
-            ctx.font = 'bold 28px Arial';
+            ctx.font = 'bold 24px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText(id.substring(0, 6).toUpperCase(), 128, 40);
+            ctx.fillText(id.substring(0, 6).toUpperCase(), 128, 25);
+            ctx.fillStyle = '#4CAF50';
+            ctx.font = '18px Arial';
+            ctx.fillText(`❤ ${health}/10`, 128, 50);
             const texture = new THREE.CanvasTexture(canvas);
             const nameMesh = new THREE.Mesh(
-                new THREE.PlaneGeometry(1.2, 0.3),
-                new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+                new THREE.PlaneGeometry(1.5, 0.4),
+                new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide })
             );
-            nameMesh.position.y = 1.8;
+            nameMesh.position.y = 2.2;
+            nameMesh.name = 'nameTag';
             group.add(nameMesh);
 
             scene.add(group);
@@ -1579,8 +1647,46 @@
                 targetRot: { yaw: 0, pitch: 0 },
                 targetCrouch: false,
                 crouch: false,
-                spectator: false
+                spectator: false,
+                healthBar: null
             });
+
+            // Store initial health
+            playerHealth.set(id, health);
+            
+            return group;
+        }
+
+        function updatePlayerHealth(id, health) {
+            playerHealth.set(id, health);
+            
+            const op = otherPlayers.get(id);
+            if (!op || !op.group) return;
+            
+            // Update the name tag texture
+            const nameTag = op.group.children.find(child => child.name === 'nameTag');
+            if (nameTag && nameTag.material.map) {
+                const canvas = nameTag.material.map.image;
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(id.substring(0, 6).toUpperCase(), 128, 25);
+                
+                // Change color based on health
+                let healthColor = '#4CAF50';
+                if (health <= 5) healthColor = '#FFA500';
+                if (health <= 2) healthColor = '#FF0000';
+                
+                ctx.fillStyle = healthColor;
+                ctx.font = '18px Arial';
+                ctx.fillText(`❤ ${health}/10`, 128, 50);
+                
+                nameTag.material.map.needsUpdate = true;
+            }
         }
 
         function removeOtherPlayer(id) {
@@ -1588,6 +1694,7 @@
             if (op) {
                 scene.remove(op.group);
                 otherPlayers.delete(id);
+                playerHealth.delete(id);
             }
         }
 
@@ -1621,9 +1728,9 @@
         });
 
         socket.on('playersSnapshot', (others) => {
-            others.forEach(({ id, pos, rot, crouch, spectator }) => {
+            others.forEach(({ id, pos, rot, crouch, spectator, health }) => {
                 if (spectator) return;
-                createOtherPlayer(id);
+                createOtherPlayer(id, health || 10);
                 const op = otherPlayers.get(id);
                 op.targetPos = pos;
                 op.targetRot = rot;
@@ -1632,9 +1739,9 @@
             });
         });
 
-        socket.on('newPlayer', ({ id, pos, rot, crouch, spectator }) => {
+        socket.on('newPlayer', ({ id, pos, rot, crouch, spectator, health }) => {
             if (spectator) return;
-            createOtherPlayer(id);
+            createOtherPlayer(id, health || 10);
             const op = otherPlayers.get(id);
             op.targetPos = pos;
             op.targetRot = rot;
@@ -1643,11 +1750,11 @@
         });
 
         socket.on('playersUpdate', (states) => {
-            states.forEach(({ id, pos, rot, crouch, spectator }) => {
+            states.forEach(({ id, pos, rot, crouch, spectator, health }) => {
                 if (id === playerId) return;
                 let op = otherPlayers.get(id);
                 if (!op && !spectator) {
-                    createOtherPlayer(id);
+                    createOtherPlayer(id, health || 10);
                     op = otherPlayers.get(id);
                 }
                 if (op) {
@@ -1700,7 +1807,11 @@
         });
 
         socket.on('updateEnderpearl', (data) => {
-            updateEnderpearl(data.id, data);
+            if (Array.isArray(data)) {
+                data.forEach(pearl => updateEnderpearl(pearl.id, pearl));
+            } else {
+                updateEnderpearl(data.id, data);
+            }
         });
 
         socket.on('removeEnderpearl', (id) => {
@@ -1803,6 +1914,7 @@
                 scene.remove(op.group);
             });
             otherPlayers.clear();
+            playerHealth.clear();
             
             // Add new blocks
             data.blocks.forEach(({ x, y, z, type }) => {
@@ -1848,6 +1960,27 @@
             } else {
                 document.getElementById('timer').style.display = 'none';
             }
+        });
+
+        // Player combat events
+        socket.on('playerHit', ({ attackerId, targetId, newHealth }) => {
+            updatePlayerHealth(targetId, newHealth);
+            
+            if (targetId === playerId) {
+                showNotification(`You were hit! Health: ${newHealth}/10`, 2000);
+            }
+        });
+
+        socket.on('playerEliminated', ({ eliminatedId, eliminatorId }) => {
+            if (eliminatedId === playerId) {
+                showNotification('You were eliminated!', 3000);
+            } else if (eliminatorId === playerId) {
+                showNotification(`You eliminated ${eliminatedId.substring(0,6)}!`, 3000);
+            } else {
+                showNotification(`${eliminatedId.substring(0,6)} was eliminated!`, 3000);
+            }
+            
+            removeOtherPlayer(eliminatedId);
         });
 
         // Start
