@@ -69,6 +69,17 @@ function addBlock(x, y, z, type) {
     if (blocks.has(key)) return false;
     blocks.set(key, type);
     io.emit('addBlock', { x, y, z, type });
+    
+    // Play place sound for nearby players
+    players.forEach((p, id) => {
+        if (!p.spectator) {
+            const dist = Math.hypot(p.pos.x - (x + 0.5), p.pos.y - (y + 0.5), p.pos.z - (z + 0.5));
+            if (dist < 20) {
+                io.to(id).emit('playSound', { name: 'place', pitch: 0.9 + Math.random() * 0.2 });
+            }
+        }
+    });
+    
     return true;
 }
 
@@ -79,11 +90,22 @@ function removeBlock(x, y, z) {
     blocks.delete(key);
     io.emit('removeBlock', { x, y, z });
     
+    // Play break sound for nearby players
+    players.forEach((p, id) => {
+        if (!p.spectator) {
+            const dist = Math.hypot(p.pos.x - (x + 0.5), p.pos.y - (y + 0.5), p.pos.z - (z + 0.5));
+            if (dist < 20) {
+                io.to(id).emit('playSound', { name: 'break', pitch: 0.8 + Math.random() * 0.4 });
+            }
+        }
+    });
+    
     if (type === 'Bed') {
         players.forEach((p, id) => {
             if (p.bedPos && p.bedPos.x === x && p.bedPos.y === y && p.bedPos.z === z) {
                 p.bedPos = null;
                 io.to(id).emit('bedDestroyed');
+                io.emit('playSound', { name: 'bedDestroyed' });
             }
         });
     }
@@ -164,8 +186,10 @@ function startRoundTimer() {
             if (activePlayers.length > 0) {
                 const winnerId = activePlayers[0].id || Array.from(players.entries()).find(([id, p]) => !p.spectator)[0];
                 io.emit('gameEnd', { winner: winnerId });
+                io.emit('playSound', { name: 'gameEnd' });
             } else {
                 io.emit('gameEnd', { winner: null });
+                io.emit('playSound', { name: 'lose' });
             }
             
             setTimeout(resetGame, 5000);
@@ -367,6 +391,7 @@ function startPlayerCheck() {
                             startRoundTimer();
                             
                             io.emit('gameStart');
+                            io.emit('playSound', { name: 'gameStart' });
                         } else {
                             // Not enough players, cancel game
                             io.emit('notification', 'Not enough players assigned. Waiting...');
@@ -494,6 +519,9 @@ io.on('connection', (socket) => {
         pickups.delete(id);
         io.emit('removePickup', id);
         socket.emit('updateCurrency', { ...p.currency });
+        
+        // Play pickup sound for the player
+        socket.emit('playSound', { name: 'pickup' });
     });
 
     socket.on('breakAttempt', ({ x, y, z }) => {
@@ -648,14 +676,21 @@ io.on('connection', (socket) => {
                     if (activePlayers.length === 1) {
                         const winnerId = Array.from(players.entries()).find(([id, p]) => !p.spectator)[0];
                         io.emit('gameEnd', { winner: winnerId });
+                        io.emit('playSound', { name: 'gameEnd' });
                     } else {
                         io.emit('gameEnd', { winner: null });
+                        io.emit('playSound', { name: 'lose' });
                     }
                     stopRoundTimer();
                     setTimeout(resetGame, 5000);
                 }
             }
         }
+    });
+    
+    // Sound event (if client wants to trigger a sound for all players)
+    socket.on('playSound', ({ name, pitch = 1.0 }) => {
+        socket.broadcast.emit('playSound', { name, pitch });
     });
 });
 
@@ -679,6 +714,7 @@ setInterval(() => {
                 removeBlock(x, y, z);
             });
             io.emit('notification', 'Beds destroyed - SUDDEN DEATH');
+            io.emit('playSound', { name: 'bedDestroyed' });
             suddenDeath = true;
         }
 
@@ -694,6 +730,7 @@ setInterval(() => {
                     p.rot.yaw = 0;
                     p.rot.pitch = 0;
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
+                    io.to(id).emit('playSound', { name: 'respawn' });
                 } else {
                     // Player eliminated
                     p.spectator = true;
@@ -701,6 +738,7 @@ setInterval(() => {
                     io.to(id).emit('setSpectator', true);
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
                     io.to(id).emit('notification', 'Eliminated! You are now a spectator.');
+                    io.to(id).emit('playSound', { name: 'death' });
                     
                     // Free up island
                     if (p.bedPos) {
@@ -727,6 +765,9 @@ setInterval(() => {
                             winnerId = Array.from(players.entries()).find(([id, p]) => !p.spectator)[0];
                         }
                         io.emit('gameEnd', { winner: winnerId });
+                        if (winnerId) {
+                            io.emit('playSound', { name: 'gameEnd' });
+                        }
                         stopRoundTimer();
                         setTimeout(resetGame, 5000);
                     }
