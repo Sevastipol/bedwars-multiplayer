@@ -34,7 +34,7 @@ const blocks = new Map();
 const pickups = new Map();
 const spawners = [];
 const players = new Map();
-const projectiles = new Map(); // For Enderpearls
+const enderpearls = new Map(); // For Enderpearls
 let gameActive = false;
 let countdownTimer = null;
 let roundStartTime = null;
@@ -204,7 +204,7 @@ function initWorld() {
     blocks.clear();
     pickups.clear();
     spawners.length = 0;
-    projectiles.clear();
+    enderpearls.clear();
     
     // Create iron islands
     ironIslands.forEach(island => {
@@ -605,7 +605,7 @@ io.on('connection', (socket) => {
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
     });
 
-    // Enderpearl throwing
+    // Enderpearl throwing (Minecraft-style)
     socket.on('throwEnderpearl', () => {
         const p = players.get(socket.id);
         if (p.spectator) return;
@@ -626,34 +626,40 @@ io.on('connection', (socket) => {
         // Update player inventory
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
         
-        // Calculate throw direction based on player rotation
-        const throwPower = 1.5;
+        // Calculate throw direction based on player rotation (Minecraft-style)
+        const throwPower = 1.5; // Similar to Minecraft's throw strength
         const velocity = {
             x: -Math.sin(p.rot.yaw) * Math.cos(p.rot.pitch) * throwPower,
             y: Math.sin(p.rot.pitch) * throwPower,
             z: -Math.cos(p.rot.yaw) * Math.cos(p.rot.pitch) * throwPower
         };
         
-        // Create projectile
-        const projectileId = `pearl-${socket.id}-${Date.now()}-${Math.random()}`;
-        const projectile = {
-            id: projectileId,
+        // Create enderpearl entity
+        const pearlId = `pearl-${socket.id}-${Date.now()}`;
+        const pearl = {
+            id: pearlId,
             owner: socket.id,
             x: p.pos.x,
-            y: p.pos.y + (p.crouch ? 1.3 : 1.6),
+            y: p.pos.y + (p.crouch ? 1.3 : 1.6), // Eye height
             z: p.pos.z,
             vx: velocity.x,
             vy: velocity.y,
             vz: velocity.z,
-            gravity: 0.03,
+            gravity: 0.03, // Minecraft's gravity
+            drag: 0.99, // Air resistance
             createdAt: Date.now(),
             landed: false
         };
         
-        projectiles.set(projectileId, projectile);
+        enderpearls.set(pearlId, pearl);
         
         // Broadcast to all clients
-        io.emit('addProjectile', projectile);
+        io.emit('addEnderpearl', {
+            id: pearl.id,
+            x: pearl.x,
+            y: pearl.y,
+            z: pearl.z
+        });
     });
 
     socket.on('disconnect', () => {
@@ -736,106 +742,109 @@ setInterval(() => {
             suddenDeath = true;
         }
 
-        // Update projectiles (Enderpearls)
-        projectiles.forEach((projectile, id) => {
-            if (projectile.landed) return;
+        // Update enderpearls (Minecraft-style physics)
+        enderpearls.forEach((pearl, id) => {
+            if (pearl.landed) return;
+            
+            // Apply air resistance
+            pearl.vx *= pearl.drag;
+            pearl.vy *= pearl.drag;
+            pearl.vz *= pearl.drag;
             
             // Apply gravity
-            projectile.vy -= projectile.gravity;
-            
-            // Apply air resistance (slight damping)
-            projectile.vx *= 0.99;
-            projectile.vz *= 0.99;
+            pearl.vy -= pearl.gravity;
             
             // Update position
-            projectile.x += projectile.vx;
-            projectile.y += projectile.vy;
-            projectile.z += projectile.vz;
+            pearl.x += pearl.vx;
+            pearl.y += pearl.vy;
+            pearl.z += pearl.vz;
             
-            // Check for collision with ground or blocks
-            const checkX = Math.floor(projectile.x);
-            const checkY = Math.floor(projectile.y);
-            const checkZ = Math.floor(projectile.z);
+            // Check for collision with blocks
+            const checkX = Math.floor(pearl.x);
+            const checkY = Math.floor(pearl.y);
+            const checkZ = Math.floor(pearl.z);
             
             // Check if hit ground
-            if (projectile.y <= 0.5) {
-                projectile.landed = true;
-                projectile.landTime = now;
-                projectile.landX = projectile.x;
-                projectile.landY = 0.5;
-                projectile.landZ = projectile.z;
+            if (pearl.y <= 0.1) {
+                pearl.landed = true;
+                pearl.landTime = now;
                 
-                // Teleport player after short delay
-                setTimeout(() => {
-                    const player = players.get(projectile.owner);
-                    if (player && !player.spectator) {
-                        player.pos.x = projectile.landX;
-                        player.pos.y = projectile.landY + 1;
-                        player.pos.z = projectile.landZ;
-                        
-                        io.to(projectile.owner).emit('teleport', {
-                            x: player.pos.x,
-                            y: player.pos.y,
-                            z: player.pos.z
-                        });
-                        
-                        // Remove projectile
-                        projectiles.delete(id);
-                        io.emit('removeProjectile', id);
+                // Teleport player immediately (Minecraft-style)
+                const player = players.get(pearl.owner);
+                if (player && !player.spectator) {
+                    // Find safe teleport location (avoid suffocation)
+                    let teleportY = 0.5;
+                    
+                    // Check for blocks above ground level
+                    for (let yOffset = 1; yOffset <= 2; yOffset++) {
+                        const checkKey = blockKey(checkX, Math.floor(pearl.y + yOffset), checkZ);
+                        if (!blocks.has(checkKey)) {
+                            teleportY = pearl.y + yOffset;
+                            break;
+                        }
                     }
-                }, 200);
+                    
+                    player.pos.x = pearl.x;
+                    player.pos.y = teleportY;
+                    player.pos.z = pearl.z;
+                    
+                    io.to(pearl.owner).emit('teleport', {
+                        x: player.pos.x,
+                        y: player.pos.y,
+                        z: player.pos.z
+                    });
+                    
+                    // Remove enderpearl
+                    enderpearls.delete(id);
+                    io.emit('removeEnderpearl', id);
+                }
             }
             // Check for collision with blocks
             else if (blocks.has(blockKey(checkX, checkY, checkZ))) {
-                projectile.landed = true;
-                projectile.landTime = now;
-                projectile.landX = projectile.x;
-                projectile.landY = projectile.y;
-                projectile.landZ = projectile.z;
+                pearl.landed = true;
+                pearl.landTime = now;
                 
-                // Teleport player after short delay
-                setTimeout(() => {
-                    const player = players.get(projectile.owner);
-                    if (player && !player.spectator) {
-                        // Try to find a safe spot near the impact
-                        let safeY = projectile.landY + 1;
-                        
-                        // Check if the position above is free
-                        for (let offset = 0; offset <= 2; offset++) {
-                            const testY = Math.floor(safeY + offset);
-                            if (!blocks.has(blockKey(checkX, testY, checkZ))) {
-                                safeY = testY + 0.5;
-                                break;
-                            }
+                // Teleport player immediately (Minecraft-style)
+                const player = players.get(pearl.owner);
+                if (player && !player.spectator) {
+                    // Find safe teleport location (on top of the block)
+                    let teleportY = checkY + 1;
+                    
+                    // Make sure we're not inside a block
+                    for (let yOffset = 0; yOffset <= 2; yOffset++) {
+                        const checkKey = blockKey(checkX, checkY + 1 + yOffset, checkZ);
+                        if (!blocks.has(checkKey)) {
+                            teleportY = checkY + 1 + yOffset;
+                            break;
                         }
-                        
-                        player.pos.x = projectile.landX;
-                        player.pos.y = safeY;
-                        player.pos.z = projectile.landZ;
-                        
-                        io.to(projectile.owner).emit('teleport', {
-                            x: player.pos.x,
-                            y: player.pos.y,
-                            z: player.pos.z
-                        });
-                        
-                        // Remove projectile
-                        projectiles.delete(id);
-                        io.emit('removeProjectile', id);
                     }
-                }, 200);
+                    
+                    player.pos.x = pearl.x;
+                    player.pos.y = teleportY;
+                    player.pos.z = pearl.z;
+                    
+                    io.to(pearl.owner).emit('teleport', {
+                        x: player.pos.x,
+                        y: player.pos.y,
+                        z: player.pos.z
+                    });
+                    
+                    // Remove enderpearl
+                    enderpearls.delete(id);
+                    io.emit('removeEnderpearl', id);
+                }
             }
             
-            // Remove old projectiles (safety)
-            if (now - projectile.createdAt > 10000) {
-                projectiles.delete(id);
-                io.emit('removeProjectile', id);
+            // Remove old enderpearls (safety - 10 seconds max)
+            if (now - pearl.createdAt > 10000) {
+                enderpearls.delete(id);
+                io.emit('removeEnderpearl', id);
             }
         });
         
-        // Send projectile updates to clients
-        if (projectiles.size > 0) {
-            const projectileUpdates = Array.from(projectiles.values())
+        // Send enderpearl updates to clients
+        if (enderpearls.size > 0) {
+            const pearlUpdates = Array.from(enderpearls.values())
                 .filter(p => !p.landed)
                 .map(p => ({
                     id: p.id,
@@ -844,8 +853,8 @@ setInterval(() => {
                     z: p.z
                 }));
             
-            if (projectileUpdates.length > 0) {
-                io.emit('updateProjectiles', projectileUpdates);
+            if (pearlUpdates.length > 0) {
+                io.emit('updateEnderpearl', pearlUpdates);
             }
         }
 
