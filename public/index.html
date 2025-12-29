@@ -315,6 +315,78 @@
         #fullscreen-overlay button:hover {
             background: #45a049;
         }
+
+        #sound-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 10px;
+            color: white;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .sound-controls-inner {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #mute-btn {
+            padding: 8px 15px;
+            background: #4CAF50;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        #mute-btn:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+
+        #mute-btn:active {
+            transform: scale(0.95);
+        }
+
+        #volume-container {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        #volume-slider {
+            -webkit-appearance: none;
+            width: 80px;
+            height: 5px;
+            background: #555;
+            border-radius: 5px;
+            outline: none;
+        }
+
+        #volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 15px;
+            height: 15px;
+            background: #4CAF50;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        #volume-slider::-moz-range-thumb {
+            width: 15px;
+            height: 15px;
+            background: #4CAF50;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
     </style>
 </head>
 <body>
@@ -323,6 +395,17 @@
         <h2>Island Builder Multiplayer</h2>
         <p>Click the button below to enter fullscreen mode</p>
         <button id="enter-fullscreen">Enter Fullscreen</button>
+    </div>
+    
+    <!-- Sound Controls -->
+    <div id="sound-controls">
+        <div class="sound-controls-inner">
+            <button id="mute-btn">🔊 Sound On</button>
+            <div id="volume-container">
+                <span style="font-size: 12px;">🔊</span>
+                <input id="volume-slider" type="range" min="0" max="100" value="50">
+            </div>
+        </div>
     </div>
     
     <!-- Timer Display -->
@@ -380,6 +463,169 @@
             }
         }
     </script>
+    
+    <!-- Sound Manager -->
+    <script>
+        // Sound Manager Class
+        class SoundManager {
+            constructor() {
+                this.audioContext = null;
+                this.sounds = new Map();
+                this.muted = false;
+                this.volume = 0.5;
+                this.initialized = false;
+                
+                // Initialize audio context on user interaction
+                this.initAudioContext();
+            }
+            
+            initAudioContext() {
+                try {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // Resume on user interaction (browser policy)
+                    const resumeAudio = () => {
+                        if (this.audioContext.state === 'suspended') {
+                            this.audioContext.resume();
+                        }
+                        document.removeEventListener('click', resumeAudio);
+                    };
+                    document.addEventListener('click', resumeAudio);
+                    
+                    this.initialized = true;
+                } catch (e) {
+                    console.warn('Web Audio API not supported');
+                    this.initialized = false;
+                }
+            }
+            
+            async loadSound(url, name) {
+                if (!this.initialized) return;
+                
+                try {
+                    const response = await fetch(url);
+                    const arrayBuffer = await response.arrayBuffer();
+                    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                    this.sounds.set(name, audioBuffer);
+                    console.log(`Loaded sound: ${name}`);
+                } catch (error) {
+                    console.warn(`Failed to load sound ${name}:`, error);
+                    // Create a fallback beep sound
+                    this.createFallbackSound(name);
+                }
+            }
+            
+            createFallbackSound(name) {
+                if (!this.initialized) return;
+                
+                try {
+                    const duration = 0.1;
+                    const sampleRate = this.audioContext.sampleRate;
+                    const frameCount = sampleRate * duration;
+                    const buffer = this.audioContext.createBuffer(1, frameCount, sampleRate);
+                    const data = buffer.getChannelData(0);
+                    
+                    // Different frequencies for different sounds
+                    let freq = 440;
+                    switch(name) {
+                        case 'break': freq = 220; break;
+                        case 'place': freq = 880; break;
+                        case 'buy': freq = 660; break;
+                        case 'buyFail': freq = 220; break;
+                        case 'notification': freq = 523; break;
+                        case 'pickup': freq = 784; break;
+                        default: freq = 440;
+                    }
+                    
+                    for (let i = 0; i < frameCount; i++) {
+                        data[i] = Math.sin(2 * Math.PI * freq * i / sampleRate) * (1 - i / frameCount);
+                    }
+                    
+                    this.sounds.set(name, buffer);
+                } catch (e) {
+                    console.warn(`Could not create fallback sound for ${name}`);
+                }
+            }
+            
+            playSound(name, volume = null, pitch = 1.0) {
+                if (this.muted || !this.initialized || !this.sounds.has(name)) return;
+                
+                try {
+                    const gainNode = this.audioContext.createGain();
+                    gainNode.connect(this.audioContext.destination);
+                    gainNode.gain.value = volume !== null ? volume : this.volume;
+                    
+                    const source = this.audioContext.createBufferSource();
+                    source.buffer = this.sounds.get(name);
+                    source.playbackRate.value = pitch;
+                    source.connect(gainNode);
+                    
+                    source.start(0);
+                    
+                    // Clean up after playback
+                    source.onended = () => {
+                        source.disconnect();
+                        gainNode.disconnect();
+                    };
+                } catch (e) {
+                    console.warn(`Failed to play sound ${name}:`, e);
+                }
+            }
+            
+            toggleMute() {
+                this.muted = !this.muted;
+                if (this.audioContext && this.audioContext.state === 'suspended') {
+                    this.audioContext.resume();
+                }
+                return this.muted;
+            }
+            
+            setVolume(value) {
+                this.volume = Math.max(0, Math.min(1, value / 100));
+            }
+        }
+
+        // Sound URLs (using free sound effects)
+        const SOUND_URLS = {
+            break: 'https://assets.mixkit.co/sfx/preview/mixkit-rock-stone-hit-2182.mp3',
+            place: 'https://assets.mixkit.co/sfx/preview/mixkit-block-click-1121.mp3',
+            buy: 'https://assets.mixkit.co/sfx/preview/mixkit-cash-register-purchase-876.mp3',
+            buyFail: 'https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-946.mp3',
+            notification: 'https://assets.mixkit.co/sfx/preview/mixkit-correct-answer-tone-2870.mp3',
+            pickup: 'https://assets.mixkit.co/sfx/preview/mixkit-coin-pickup-1995.mp3',
+            respawn: 'https://assets.mixkit.co/sfx/preview/mixkit-magic-sparkles-300.mp3',
+            bedDestroyed: 'https://assets.mixkit.co/sfx/preview/mixkit-ominous-drums-227.mp3',
+            gameStart: 'https://assets.mixkit.co/sfx/preview/mixkit-video-game-start-3064.mp3',
+            gameEnd: 'https://assets.mixkit.co/sfx/preview/mixkit-winning-chimes-2015.mp3',
+            click: 'https://assets.mixkit.co/sfx/preview/mixkit-select-click-1109.mp3',
+            walk: 'https://assets.mixkit.co/sfx/preview/mixkit-footsteps-on-grass-500.mp3',
+            jump: 'https://assets.mixkit.co/sfx/preview/mixkit-jump-arcade-game-166.mp3',
+            land: 'https://assets.mixkit.co/sfx/preview/mixkit-hard-pop-click-2364.mp3',
+            death: 'https://assets.mixkit.co/sfx/preview/mixkit-player-losing-or-failing-2042.mp3',
+            win: 'https://assets.mixkit.co/sfx/preview/mixkit-winning-chimes-2015.mp3',
+            lose: 'https://assets.mixkit.co/sfx/preview/mixkit-losing-drums-2023.mp3'
+        };
+
+        // Create global sound manager instance
+        const soundManager = new SoundManager();
+
+        // Load all sounds
+        Object.entries(SOUND_URLS).forEach(([name, url]) => {
+            soundManager.loadSound(url, name);
+        });
+
+        // Setup volume controls
+        document.getElementById('mute-btn').addEventListener('click', () => {
+            const muted = soundManager.toggleMute();
+            document.getElementById('mute-btn').textContent = muted ? '🔇 Sound Off' : '🔊 Sound On';
+            soundManager.playSound('click', 0.3);
+        });
+
+        document.getElementById('volume-slider').addEventListener('input', (e) => {
+            soundManager.setVolume(e.target.value);
+        });
+    </script>
+
     <script type="module">
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
@@ -396,6 +642,7 @@
         let roundTimeRemaining = 900;
         let roundTimerInterval = null;
         let isInRound = false;
+        let wasBuying = false; // Flag for buy sound
 
         // --- Config ---
         const BLOCK_TYPES = {
@@ -428,6 +675,11 @@
 
         // Crouching state
         let isCrouching = false;
+
+        // Walking sound state
+        let lastFootstep = 0;
+        const footstepInterval = 400; // ms between footsteps
+        let lastCurrency = { iron: 0, gold: 0, emerald: 0 };
 
         let playerId = null;
         let blocksMeshes = new Map();
@@ -716,6 +968,10 @@
                 const idx = blocksInScene.indexOf(mesh);
                 if (idx > -1) blocksInScene.splice(idx, 1);
                 blocksMeshes.delete(key);
+                
+                // Play break sound with random pitch variation
+                const pitch = 0.8 + Math.random() * 0.4; // Random pitch between 0.8 and 1.2
+                soundManager.playSound('break', null, pitch);
             }
         }
 
@@ -863,6 +1119,11 @@
         document.addEventListener('keydown', (e) => {
             if (!isFullscreen()) return;
             
+            // Play click sound for most key presses
+            if (['KeyW', 'KeyS', 'KeyA', 'KeyD', 'Space', 'KeyB', 'ShiftLeft', 'ShiftRight', 'Escape'].includes(e.code)) {
+                soundManager.playSound('click', 0.1);
+            }
+            
             if (isSpectator) {
                 if(e.code === 'KeyB') return;
                 
@@ -897,9 +1158,11 @@
                     if(onGround && !isCrouching) {
                         velocity.y = 7.5;
                         onGround = false;
+                        soundManager.playSound('jump', 0.3);
                     } else if (onGround && isCrouching) {
                         velocity.y = 6;
                         onGround = false;
+                        soundManager.playSound('jump', 0.2);
                     }
                     break;
                 case 'ShiftLeft':
@@ -998,6 +1261,7 @@
                     }
                 }
             } else if (e.button === 0) {
+                soundManager.playSound('click', 0.2);
                 if (intersects.length > 0) {
                     const obj = intersects[0].object;
                     if (intersects[0].distance > 5) return;
@@ -1077,6 +1341,7 @@
 
         let prevTime = performance.now();
         let lastGeneratorUpdate = 0;
+        let wasOnGround = false;
 
         function animate() {
             requestAnimationFrame(animate);
@@ -1181,6 +1446,16 @@
                     const baseSpeed = 5.0;
                     const speed = isCrouching ? baseSpeed * 0.6 : baseSpeed;
 
+                    // Walking sound
+                    if ((moveState.fwd || moveState.bwd || moveState.l || moveState.r) && onGround) {
+                        const now = Date.now();
+                        if (now - lastFootstep > footstepInterval) {
+                            const walkVolume = isCrouching ? 0.1 : 0.2;
+                            soundManager.playSound('walk', walkVolume);
+                            lastFootstep = now;
+                        }
+                    }
+
                     if (direction.x !== 0) {
                         const moveDir = new THREE.Vector3(1, 0, 0);
                         moveDir.applyQuaternion(camera.quaternion);
@@ -1204,6 +1479,13 @@
                     }
 
                     camera.position.y += velocity.y * delta;
+                    
+                    // Check for landing sound
+                    if (!wasOnGround && onGround && velocity.y < -5) {
+                        soundManager.playSound('land', 0.2);
+                    }
+                    wasOnGround = onGround;
+                    
                     onGround = false;
 
                     const currentEyeHeightForFoot = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
@@ -1308,6 +1590,8 @@
             } else {
                 overlay.style.opacity = '0';
             }
+            
+            soundManager.playSound('click', 0.2);
         }
 
         const hotbarContainer = document.getElementById('hotbar-container');
@@ -1322,7 +1606,10 @@
                 const slot = inventory[i];
                 const div = document.createElement('div');
                 div.className = `inv-slot ${i === selectedSlotIndex ? 'active' : ''}`;
-                div.onclick = () => selectSlot(i);
+                div.onclick = () => {
+                    selectSlot(i);
+                    soundManager.playSound('click', 0.2);
+                };
 
                 const keyHint = document.createElement('span');
                 keyHint.className = 'slot-key';
@@ -1334,7 +1621,6 @@
                     if (blockData.hasTexture) {
                         const icon = document.createElement('img');
                         icon.className = 'block-icon';
-                        // FIXED: Using same texture URLs as 3D blocks
                         if (slot.type === 'Grass') icon.src = TEXTURE_URLS.grass;
                         else if (slot.type === 'Wood') icon.src = TEXTURE_URLS.wood;
                         else if (slot.type === 'Stone') icon.src = TEXTURE_URLS.stone;
@@ -1382,6 +1668,8 @@
                     <span style="color: ${affordable ? '#4d9043' : '#d32f2f'}">${costText}</span>
                 `;
                 item.onclick = () => {
+                    soundManager.playSound('click', 0.3);
+                    wasBuying = true;
                     socket.emit('buyAttempt', name);
                 };
                 container.appendChild(item);
@@ -1397,10 +1685,12 @@
             if (isVisible) {
                 shop.style.display = 'none';
                 controls.lock();
+                soundManager.playSound('click', 0.3);
             } else {
                 shop.style.display = 'block';
                 controls.unlock();
                 renderShop();
+                soundManager.playSound('click', 0.3);
             }
         }
 
@@ -1494,6 +1784,10 @@
             const el = document.getElementById('notification');
             el.innerText = msg;
             el.style.display = 'block';
+            
+            // Play notification sound
+            soundManager.playSound('notification');
+            
             setTimeout(() => {
                 el.style.display = 'none';
             }, duration);
@@ -1563,8 +1857,15 @@
             });
         });
 
-        socket.on('addBlock', ({ x, y, z, type }) => addBlockMesh(x, y, z, type));
+        socket.on('addBlock', ({ x, y, z, type }) => {
+            addBlockMesh(x, y, z, type);
+            // Play place sound with random pitch
+            const pitch = 0.9 + Math.random() * 0.2;
+            soundManager.playSound('place', null, pitch);
+        });
+        
         socket.on('removeBlock', ({ x, y, z }) => removeBlockMesh(x, y, z));
+        
         socket.on('addPickup', addPickupMesh);
         socket.on('removePickup', (id) => removePickupMesh(id));
 
@@ -1572,20 +1873,40 @@
             if (type) addBlockMesh(x, y, z, type);
             else removeBlockMesh(x, y, z);
         });
-        socket.on('revertPlace', ({ x, y, z }) => removeBlockMesh(x, y, z));
+        
+        socket.on('revertPlace', ({ x, y, z }) => {
+            removeBlockMesh(x, y, z);
+            soundManager.playSound('click', 0.3); // Place fail sound
+        });
+        
         socket.on('revertPickup', addPickupMesh);
 
         socket.on('updateCurrency', (curr) => {
+            // Check if currency increased (pickup collected)
+            if (curr.iron > lastCurrency.iron || curr.gold > lastCurrency.gold || curr.emerald > lastCurrency.emerald) {
+                soundManager.playSound('pickup', 0.3);
+            }
+            lastCurrency = { ...curr };
             currency = curr;
             updateUI();
         });
+        
         socket.on('updateInventory', (inv) => {
             inventory = inv;
             updateUI();
+            
+            // Play buy sound if this was triggered by a buy
+            if (wasBuying) {
+                soundManager.playSound('buy');
+                wasBuying = false;
+            }
         });
+        
         socket.on('buyFailed', () => {
             showNotification('Not enough resources or inventory full!');
+            soundManager.playSound('buyFail');
             renderShop();
+            wasBuying = false;
         });
 
         socket.on('removePlayer', (id) => {
@@ -1596,10 +1917,12 @@
             camera.position.set(data.pos.x, data.pos.y, data.pos.z);
             camera.rotation.set(data.rot.pitch, data.rot.yaw, 0);
             velocity.set(0, 0, 0);
+            soundManager.playSound('respawn');
         });
 
         socket.on('bedDestroyed', () => {
             showNotification('Your bed was destroyed!');
+            soundManager.playSound('bedDestroyed');
         });
 
         socket.on('notification', (msg) => {
@@ -1615,6 +1938,7 @@
             showNotification('GO!');
             isInRound = true;
             startRoundTimer(900);
+            soundManager.playSound('gameStart');
         });
 
         socket.on('assignBed', (data) => {
@@ -1628,15 +1952,20 @@
             inventory = data.inventory;
             currency = data.currency;
             updateUI();
+            
+            soundManager.playSound('notification');
         });
 
         socket.on('gameEnd', ({ winner }) => {
             if (winner === playerId) {
                 showNotification('You Win!', 5000);
+                soundManager.playSound('win');
             } else if (winner) {
                 showNotification(`Player ${winner.substring(0,6)} Wins!`, 5000);
+                soundManager.playSound('gameEnd', 0.3);
             } else {
                 showNotification('Game ended with no winner!', 5000);
+                soundManager.playSound('lose', 0.3);
             }
             isInRound = false;
             stopRoundTimer();
