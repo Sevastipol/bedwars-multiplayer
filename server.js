@@ -21,7 +21,10 @@ const BLOCK_TYPES = {
     'Stone': { color: 0x777777, cost: { gold: 5 }, breakTime: 6, buyAmount: 8, hasTexture: true },
     'Obsidian': { color: 0x111111, cost: { emerald: 1 }, breakTime: 12, buyAmount: 1, hasTexture: true },
     'Bed': { color: 0xff0000, breakTime: 2, buyAmount: 1, hasTexture: false },
-    'Enderpearl': { color: 0x00ff88, cost: { emerald: 2 }, buyAmount: 1, isItem: true, hasTexture: true }
+    'Enderpearl': { color: 0x00ff88, cost: { emerald: 2 }, buyAmount: 1, isItem: true, hasTexture: true },
+    'Wooden Sword': { color: 0x8B4513, cost: { iron: 10 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 2, hasTexture: true },
+    'Iron Sword': { color: 0xC0C0C0, cost: { gold: 10 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 3, hasTexture: true },
+    'Emerald Sword': { color: 0x00FF00, cost: { emerald: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 5, hasTexture: true }
 };
 const MAX_STACK = 64;
 const INVENTORY_SIZE = 9;
@@ -283,6 +286,7 @@ function resetGame() {
         p.spectator = true;
         p.health = PLAYER_MAX_HEALTH;
         p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
+        p.equippedWeapon = null;
         
         io.to(id).emit('setSpectator', true);
         io.to(id).emit('respawn', {
@@ -412,7 +416,8 @@ io.on('connection', (socket) => {
         spectator: true,
         health: PLAYER_MAX_HEALTH,
         id: socket.id,
-        lastHitTime: 0
+        lastHitTime: 0,
+        equippedWeapon: null
     };
     
     players.set(socket.id, playerState);
@@ -453,7 +458,8 @@ io.on('connection', (socket) => {
             rot: p.rot, 
             crouch: p.crouch,
             spectator: p.spectator,
-            health: p.health
+            health: p.health,
+            equippedWeapon: p.equippedWeapon
         }));
     socket.emit('playersSnapshot', otherPlayers);
 
@@ -464,7 +470,8 @@ io.on('connection', (socket) => {
         rot: playerState.rot, 
         crouch: playerState.crouch,
         spectator: playerState.spectator,
-        health: playerState.health
+        health: playerState.health,
+        equippedWeapon: playerState.equippedWeapon
     });
 
     // Update waiting message
@@ -483,6 +490,7 @@ io.on('connection', (socket) => {
             p.crouch = data.crouch;
             p.selected = data.selected;
             p.spectator = data.spectator;
+            p.equippedWeapon = data.equippedWeapon;
         }
     });
 
@@ -528,14 +536,19 @@ io.on('connection', (socket) => {
             }
             
             // Check distance for bed breaking (same as other blocks)
+            const eyeHeight = p.crouch ? 1.3 : 1.6;
+            const playerEyeY = p.pos.y - eyeHeight;
+            const blockCenterY = y + 0.5;
+            
             const dist = Math.hypot(
                 p.pos.x - (x + 0.5),
-                (p.pos.y - (p.crouch ? 1.3 : 1.6)) - (y + 0.5),
+                playerEyeY - blockCenterY,
                 p.pos.z - (z + 0.5)
             );
             
-            if (dist > 5) {
+            if (dist > 5.5) {
                 socket.emit('revertBreak', { x, y, z, type: 'Bed' });
+                socket.emit('notification', 'Too far away!');
                 return;
             }
             
@@ -543,14 +556,19 @@ io.on('connection', (socket) => {
             return;
         }
         
+        const eyeHeight = p.crouch ? 1.3 : 1.6;
+        const playerEyeY = p.pos.y - eyeHeight;
+        const blockCenterY = y + 0.5;
+        
         const dist = Math.hypot(
             p.pos.x - (x + 0.5),
-            (p.pos.y - (p.crouch ? 1.3 : 1.6)) - (y + 0.5),
+            playerEyeY - blockCenterY,
             p.pos.z - (z + 0.5)
         );
         
-        if (dist > 5) {
+        if (dist > 5.5) {
             socket.emit('revertBreak', { x, y, z, type });
+            socket.emit('notification', 'Too far away!');
             return;
         }
         
@@ -578,19 +596,30 @@ io.on('connection', (socket) => {
             return;
         }
         
+        const eyeHeight = p.crouch ? 1.3 : 1.6;
+        const playerEyeY = p.pos.y - eyeHeight;
+        const blockCenterY = y + 0.5;
+        
         const dist = Math.hypot(
             p.pos.x - (x + 0.5),
-            (p.pos.y - (p.crouch ? 1.3 : 1.6)) - (y + 0.5),
+            playerEyeY - blockCenterY,
             p.pos.z - (z + 0.5)
         );
         
-        if (dist > 5) {
+        if (dist > 5.5) {
             socket.emit('revertPlace', { x, y, z });
+            socket.emit('notification', 'Too far away!');
             return;
         }
         
         slot.count--;
-        if (slot.count === 0) p.inventory[p.selected] = null;
+        if (slot.count === 0) {
+            p.inventory[p.selected] = null;
+            // Update equipped weapon if it was a sword
+            if (BLOCK_TYPES[type] && BLOCK_TYPES[type].isWeapon && p.selected === p.selected) {
+                p.equippedWeapon = null;
+            }
+        }
         addBlock(x, y, z, type);
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
     });
@@ -625,7 +654,7 @@ io.on('connection', (socket) => {
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
     });
 
-    // Player combat - FIXED BUGS HERE
+    // Player combat
     socket.on('hitPlayer', (targetId) => {
         const attacker = players.get(socket.id);
         const target = players.get(targetId);
@@ -643,19 +672,29 @@ io.on('connection', (socket) => {
         const dz = attacker.pos.z - target.pos.z;
         const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
         
-        if (dist > 5) return; // Max hit distance
+        if (dist > 5) {
+            socket.emit('notification', 'Too far away!');
+            return;
+        }
+        
+        // Calculate damage based on equipped weapon
+        let damage = 1; // Default damage (fist)
+        if (attacker.equippedWeapon) {
+            const weaponData = BLOCK_TYPES[attacker.equippedWeapon];
+            if (weaponData && weaponData.isWeapon) {
+                damage = weaponData.damage;
+            }
+        }
         
         // Apply damage
-        target.health -= 1;
+        target.health -= damage;
         attacker.lastHitTime = now;
         
-        // FIX #1: Apply knockback (0.5 blocks) to TARGET, not attacker
-        // Direction should be from attacker to target (target gets pushed away from attacker)
+        // Apply knockback (0.5 blocks)
         const knockback = 0.5;
         const dirX = dx / dist;
         const dirZ = dz / dist;
         
-        // Push target AWAY from attacker (opposite direction of dx, dz)
         target.pos.x -= dirX * knockback;
         target.pos.z -= dirZ * knockback;
         
@@ -668,12 +707,10 @@ io.on('connection', (socket) => {
         
         // Check if target is eliminated
         if (target.health <= 0) {
-            // FIX #2: Check if target has a bed and it's not destroyed
             const bedKey = target.bedPos ? blockKey(target.bedPos.x, target.bedPos.y, target.bedPos.z) : null;
             const hasBed = target.bedPos && blocks.get(bedKey) === 'Bed';
             
             if (hasBed) {
-                // Player has a bed, respawn them at bed
                 target.health = PLAYER_MAX_HEALTH;
                 target.pos.x = target.bedPos.x + 0.5;
                 target.pos.y = target.bedPos.y + 2;
@@ -681,22 +718,19 @@ io.on('connection', (socket) => {
                 target.rot.yaw = 0;
                 target.rot.pitch = 0;
                 
-                // Send respawn event to the player
                 io.to(targetId).emit('respawn', { 
                     pos: target.pos, 
                     rot: target.rot 
                 });
                 
-                // Update health for everyone
                 io.emit('playerHit', {
-                    attackerId: null, // No attacker for respawn
+                    attackerId: null,
                     targetId: target.id,
                     newHealth: target.health
                 });
                 
                 io.to(targetId).emit('notification', 'You died and respawned at your bed!');
             } else {
-                // Player eliminated - no bed
                 target.spectator = true;
                 target.health = PLAYER_MAX_HEALTH;
                 target.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
@@ -745,68 +779,50 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Enderpearl throwing (Minecraft-style) - IMPROVED PHYSICS
+    // Enderpearl throwing (Minecraft-style)
     socket.on('throwEnderpearl', () => {
         const p = players.get(socket.id);
         if (p.spectator) return;
         
-        // Check if player has an enderpearl in selected slot
         const slot = p.inventory[p.selected];
         if (!slot || slot.type !== 'Enderpearl' || slot.count < 1) {
             socket.emit('notification', 'No Enderpearl in selected slot!');
             return;
         }
         
-        // Remove one enderpearl from inventory
         slot.count--;
         if (slot.count === 0) {
             p.inventory[p.selected] = null;
         }
         
-        // Update player inventory
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
         
-        // Calculate throw direction based on player rotation (Minecraft-style)
-        const throwPower = 1.5; // Minecraft-like throw strength
-        
-        // Convert yaw and pitch to radians if they're in degrees
-        const yawRad = p.rot.yaw;
-        const pitchRad = p.rot.pitch;
-        
-        // Calculate velocity components (Minecraft formula)
+        const throwPower = 1.5;
         const velocity = {
-            x: -Math.sin(yawRad) * Math.cos(pitchRad) * throwPower,
-            y: -Math.sin(pitchRad) * throwPower, // Negative because in Minecraft, looking down gives positive pitch
-            z: -Math.cos(yawRad) * Math.cos(pitchRad) * throwPower
+            x: -Math.sin(p.rot.yaw) * Math.cos(p.rot.pitch) * throwPower,
+            y: -Math.sin(p.rot.pitch) * throwPower,
+            z: -Math.cos(p.rot.yaw) * Math.cos(p.rot.pitch) * throwPower
         };
         
-        // Create enderpearl entity with proper physics
         const pearlId = `pearl-${socket.id}-${Date.now()}`;
         const pearl = {
             id: pearlId,
             owner: socket.id,
             x: p.pos.x,
-            y: p.pos.y + (p.crouch ? 1.3 : 1.6), // Start at eye level
+            y: p.pos.y + (p.crouch ? 1.3 : 1.6),
             z: p.pos.z,
             vx: velocity.x,
             vy: velocity.y,
             vz: velocity.z,
-            gravity: 0.03, // Minecraft-like gravity
-            drag: 0.99, // Air resistance
+            gravity: 0.03,
+            drag: 0.99,
             lastUpdate: Date.now(),
             createdAt: Date.now(),
-            landed: false,
-            hasMoved: false // Track if the pearl has actually moved
+            landed: false
         };
-        
-        // Add a small forward offset to prevent immediate collision
-        pearl.x += velocity.x * 0.1;
-        pearl.y += velocity.y * 0.1;
-        pearl.z += velocity.z * 0.1;
         
         enderpearls.set(pearlId, pearl);
         
-        // Broadcast to all clients
         io.emit('addEnderpearl', {
             id: pearl.id,
             x: pearl.x,
@@ -895,85 +911,100 @@ setInterval(() => {
             suddenDeath = true;
         }
 
-        // Update enderpearls with improved physics
+        // Update enderpearls with Minecraft physics
         const pearlUpdates = [];
         enderpearls.forEach((pearl, id) => {
             if (pearl.landed) return;
             
-            const deltaTime = (now - pearl.lastUpdate) / 1000; // Convert to seconds
+            const deltaTime = (now - pearl.lastUpdate) / 1000;
             if (deltaTime <= 0) return;
             
             pearl.lastUpdate = now;
             
-            // Apply air resistance
-            pearl.vx *= Math.pow(pearl.drag, deltaTime * 20); // Adjust for frame rate
-            pearl.vy *= Math.pow(pearl.drag, deltaTime * 20);
-            pearl.vz *= Math.pow(pearl.drag, deltaTime * 20);
+            // Apply gravity
+            pearl.vy -= pearl.gravity;
             
-            // Apply gravity (only if not already moving up too fast)
-            pearl.vy -= pearl.gravity * deltaTime * 20;
+            // Apply velocity with air resistance
+            pearl.vx *= pearl.drag;
+            pearl.vz *= pearl.drag;
             
-            // Store old position for collision detection
-            const oldX = pearl.x;
-            const oldY = pearl.y;
-            const oldZ = pearl.z;
-            
-            // Update position
             pearl.x += pearl.vx * deltaTime * 20;
             pearl.y += pearl.vy * deltaTime * 20;
             pearl.z += pearl.vz * deltaTime * 20;
-            
-            // Mark that the pearl has moved
-            pearl.hasMoved = true;
             
             // Check for collision with blocks or ground
             const checkX = Math.floor(pearl.x);
             const checkY = Math.floor(pearl.y);
             const checkZ = Math.floor(pearl.z);
             
-            // Check if pearl has moved enough to avoid immediate collision
-            const distanceMoved = Math.sqrt(
-                Math.pow(pearl.x - oldX, 2) + 
-                Math.pow(pearl.y - oldY, 2) + 
-                Math.pow(pearl.z - oldZ, 2)
-            );
-            
-            if (pearl.y <= 0.1 || (blocks.has(blockKey(checkX, checkY, checkZ)) && distanceMoved > 0.1)) {
+            if (pearl.y <= 0.1 || blocks.has(blockKey(checkX, checkY, checkZ))) {
                 pearl.landed = true;
                 
-                // Teleport player
+                // Teleport player with damage (Minecraft: 5 damage = 2.5 hearts)
                 const player = players.get(pearl.owner);
-                if (player && !player.spectator && pearl.hasMoved) {
-                    // Find safe teleport position
-                    let teleportX = pearl.x;
-                    let teleportY = Math.max(0.5, pearl.y);
-                    let teleportZ = pearl.z;
+                if (player && !player.spectator) {
+                    player.health -= 2.5; // 2.5 hearts damage
                     
-                    // Try to find a safe spot above (like Minecraft does)
-                    for (let yOffset = 1; yOffset <= 3; yOffset++) {
-                        const checkKey = blockKey(Math.floor(teleportX), Math.floor(teleportY + yOffset), Math.floor(teleportZ));
-                        if (!blocks.has(checkKey)) {
-                            teleportY = pearl.y + yOffset - 0.1; // -0.1 to be slightly above ground
-                            break;
-                        }
+                    // Teleport player
+                    player.pos.x = pearl.x;
+                    player.pos.y = pearl.y + 0.5;
+                    player.pos.z = pearl.z;
+                    
+                    // Make sure player is on solid ground
+                    while (player.pos.y > 0 && blocks.has(blockKey(
+                        Math.floor(player.pos.x), 
+                        Math.floor(player.pos.y - 1), 
+                        Math.floor(player.pos.z)
+                    ))) {
+                        player.pos.y += 1;
                     }
-                    
-                    player.pos.x = teleportX;
-                    player.pos.y = teleportY;
-                    player.pos.z = teleportZ;
                     
                     io.to(pearl.owner).emit('teleport', {
                         x: player.pos.x,
                         y: player.pos.y,
                         z: player.pos.z
                     });
+                    
+                    // Update health
+                    if (player.health <= 0) {
+                        player.spectator = true;
+                        player.health = PLAYER_MAX_HEALTH;
+                        player.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
+                        
+                        io.to(pearl.owner).emit('setSpectator', true);
+                        io.to(pearl.owner).emit('respawn', { 
+                            pos: player.pos, 
+                            rot: player.rot 
+                        });
+                        io.to(pearl.owner).emit('notification', 'Eliminated by Ender pearl!');
+                        
+                        // Check game end conditions
+                        const activePlayers = getActivePlayers();
+                        if (activePlayers.length <= 1) {
+                            gameActive = false;
+                            let winnerId = null;
+                            if (activePlayers.length === 1) {
+                                winnerId = Array.from(players.entries()).find(([id, p]) => !p.spectator)[0];
+                            }
+                            io.emit('gameEnd', { winner: winnerId });
+                            stopRoundTimer();
+                            setTimeout(resetGame, 5000);
+                        }
+                    } else {
+                        io.emit('playerHit', {
+                            attackerId: null,
+                            targetId: pearl.owner,
+                            newHealth: player.health
+                        });
+                    }
                 }
                 
-                // Remove enderpearl
-                enderpearls.delete(id);
-                io.emit('removeEnderpearl', id);
+                // Remove enderpearl after a short delay
+                setTimeout(() => {
+                    enderpearls.delete(id);
+                    io.emit('removeEnderpearl', id);
+                }, 100);
             } else if (now - pearl.createdAt > 30000) { // 30 second timeout
-                // Remove old enderpearls
                 enderpearls.delete(id);
                 io.emit('removeEnderpearl', id);
             } else {
@@ -986,7 +1017,6 @@ setInterval(() => {
             }
         });
         
-        // Send enderpearl updates more frequently for smoother animation
         if (pearlUpdates.length > 0) {
             io.emit('updateEnderpearl', pearlUpdates);
         }
@@ -996,12 +1026,10 @@ setInterval(() => {
             if (p.spectator) return;
             
             if (p.pos.y < -30 && now - p.lastRespawn > 2000) {
-                // Check if player has a bed
                 const bedKey = p.bedPos ? blockKey(p.bedPos.x, p.bedPos.y, p.bedPos.z) : null;
                 const hasBed = p.bedPos && blocks.get(bedKey) === 'Bed';
                 
                 if (hasBed) {
-                    // Respawn at bed
                     p.pos.x = p.bedPos.x + 0.5;
                     p.pos.y = p.bedPos.y + 2;
                     p.pos.z = p.bedPos.z + 0.5;
@@ -1010,14 +1038,12 @@ setInterval(() => {
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
                     io.to(id).emit('notification', 'You fell into the void and respawned at your bed!');
                 } else {
-                    // Player eliminated - no bed
                     p.spectator = true;
                     p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
                     io.to(id).emit('setSpectator', true);
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
                     io.to(id).emit('notification', 'Eliminated! You are now a spectator.');
                     
-                    // Free up island
                     if (p.bedPos) {
                         for (let i = 0; i < ironIslands.length; i++) {
                             if (ironIslands[i].bedX === p.bedPos.x && 
@@ -1033,7 +1059,6 @@ setInterval(() => {
                         p.bedPos = null;
                     }
                     
-                    // Check if game should end
                     const activePlayers = getActivePlayers();
                     if (activePlayers.length <= 1) {
                         gameActive = false;
@@ -1051,14 +1076,15 @@ setInterval(() => {
         });
     }
 
-    // Sync players (20 FPS) with health information
+    // Sync players (20 FPS) with health and equipped weapon information
     const states = Array.from(players.entries()).map(([id, p]) => ({
         id,
         pos: p.pos,
         rot: p.rot,
         crouch: p.crouch,
         spectator: p.spectator,
-        health: p.health
+        health: p.health,
+        equippedWeapon: p.equippedWeapon
     }));
     io.emit('playersUpdate', states);
 }, 50); // 20 FPS game loop
