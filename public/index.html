@@ -291,6 +291,7 @@
             display: none;
             z-index: 20;
             pointer-events: none;
+            transition: opacity 0.5s ease;
         }
         
         #fullscreen-overlay {
@@ -597,7 +598,7 @@
                     document.getElementById('timer').style.display = 'block';
                 }
                 
-                // Update sword in hand
+                // Update sword in hand (will be hidden for local player)
                 updateSwordInHand();
                 
                 if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
@@ -616,8 +617,14 @@
             if (playersNeeded > 0) {
                 messageElement.textContent = `Waiting for ${playersNeeded} more player${playersNeeded > 1 ? 's' : ''}...`;
                 messageElement.style.display = 'block';
+                messageElement.style.opacity = '1';
             } else {
-                messageElement.style.display = 'none';
+                messageElement.style.opacity = '0';
+                setTimeout(() => {
+                    if (parseFloat(messageElement.style.opacity) === 0) {
+                        messageElement.style.display = 'none';
+                    }
+                }, 500);
             }
         }
 
@@ -823,7 +830,15 @@
             pearl.userData = { 
                 id: data.id, 
                 type: 'enderpearl',
-                baseScale: baseScale
+                baseScale: baseScale,
+                // Store interpolation data
+                targetX: data.x,
+                targetY: data.y,
+                targetZ: data.z,
+                prevX: data.x,
+                prevY: data.y,
+                prevZ: data.z,
+                updateTime: Date.now()
             };
             scene.add(pearl);
             
@@ -835,16 +850,11 @@
         function updateEnderpearl(id, position) {
             const pearl = projectiles.get(id);
             if (pearl) {
-                pearl.position.set(position.x, position.y, position.z);
-                pearl.lookAt(camera.position);
-                
-                const distance = camera.position.distanceTo(pearl.position);
-                const baseScale = pearl.userData.baseScale || 0.3;
-                const constant = 5;
-                let scale = baseScale * (constant / Math.max(1, distance));
-                scale = Math.max(0.1, Math.min(scale, 1.0));
-                
-                pearl.scale.set(scale, scale, 1);
+                // Store target position
+                pearl.userData.targetX = position.x;
+                pearl.userData.targetY = position.y;
+                pearl.userData.targetZ = position.z;
+                pearl.userData.updateTime = Date.now();
             }
         }
 
@@ -881,23 +891,14 @@
         }
 
         function updateSwordInHand() {
-            // Remove existing sword
+            // Remove existing sword from local view - local player doesn't see their own sword
             if (swordInHand) {
                 scene.remove(swordInHand);
                 swordInHand = null;
             }
             
-            // Check if current slot has a sword
-            const currentSlot = inventory[selectedSlotIndex];
-            if (currentSlot && currentSlot.type && BLOCK_TYPES[currentSlot.type] && BLOCK_TYPES[currentSlot.type].isWeapon) {
-                swordInHand = createSwordMesh(currentSlot.type);
-                if (swordInHand) {
-                    // Position sword in view (lower right corner, like Minecraft)
-                    swordInHand.position.set(-0.4, -0.3, -0.5);
-                    swordInHand.scale.set(0.6, 0.6, 1);
-                    scene.add(swordInHand);
-                }
-            }
+            // DO NOT create sword for local player - others will see it via server updates
+            // The server will broadcast equippedWeapon to other clients
         }
 
         function updateOtherPlayerSword(playerId, swordType) {
@@ -916,8 +917,11 @@
                 const sword = createSwordMesh(swordType, playerId);
                 if (sword) {
                     // Position in right hand (outside the body)
-                    sword.position.set(-0.7, 0.8, 0.2); // Position in right hand
+                    sword.position.set(-0.4, 0.8, 0); // Adjusted position
                     sword.scale.set(0.4, 0.4, 1);
+                    
+                    // Make sword face camera (billboard effect for visibility)
+                    sword.userData.isSword = true;
                     
                     op.group.add(sword);
                     playerSwords.set(playerId, sword);
@@ -1366,6 +1370,42 @@
                 lastGeneratorUpdate = time;
             }
 
+            // Interpolate enderpearl positions
+            projectiles.forEach((pearl, id) => {
+                if (pearl.userData.type === 'enderpearl') {
+                    // Smooth interpolation between positions
+                    const elapsed = Date.now() - pearl.userData.updateTime;
+                    const t = Math.min(elapsed / 50, 1); // Interpolate over 50ms
+                    
+                    const newX = THREE.MathUtils.lerp(
+                        pearl.position.x,
+                        pearl.userData.targetX,
+                        t
+                    );
+                    const newY = THREE.MathUtils.lerp(
+                        pearl.position.y,
+                        pearl.userData.targetY,
+                        t
+                    );
+                    const newZ = THREE.MathUtils.lerp(
+                        pearl.position.z,
+                        pearl.userData.targetZ,
+                        t
+                    );
+                    
+                    pearl.position.set(newX, newY, newZ);
+                    
+                    // Scale based on distance to camera
+                    const distance = camera.position.distanceTo(pearl.position);
+                    const baseScale = pearl.userData.baseScale || 0.3;
+                    const scale = baseScale * Math.max(0.5, Math.min(1.5, 10 / Math.max(1, distance)));
+                    pearl.scale.set(scale, scale, 1);
+                    
+                    // Always face camera
+                    pearl.lookAt(camera.position);
+                }
+            });
+
             if (isBreaking && breakingBlock && !isSpectator) {
                 if (!isStillLookingAtBlock()) {
                     isBreaking = false;
@@ -1428,25 +1468,6 @@
                     socket.emit('claimPickupAttempt', pickup.userData.id);
                     removePickupMesh(pickup.userData.id);
                 }
-            }
-
-            // Update sword in hand position (bobbing animation)
-            if (swordInHand) {
-                swordBobTime += delta;
-                const bobAmount = 0.02;
-                const bobSpeed = 5;
-                
-                const bobOffset = Math.sin(swordBobTime * bobSpeed) * bobAmount;
-                
-                // Position in lower right corner with bobbing
-                swordInHand.position.set(-0.4, -0.3 + bobOffset, -0.5);
-                
-                // Make sword face camera (billboard effect)
-                swordInHand.lookAt(camera.position);
-                
-                // Add slight rotation to make it look more natural
-                swordInHand.rotation.x = -0.2; // Tilt forward slightly
-                swordInHand.rotation.z = Math.PI / 6; // Rotate 30 degrees for better visibility
             }
 
             if (controls.isLocked) {
@@ -1572,7 +1593,7 @@
                     data.healthBar.style.backgroundColor = health > 5 ? '#4CAF50' : health > 2 ? '#FFA500' : '#FF0000';
                 }
                 
-                // Update sword for other players
+                // Update sword for other players - make it face camera
                 if (playerSwords.has(id)) {
                     const sword = playerSwords.get(id);
                     // Make sword look at camera (billboard effect)
@@ -2049,14 +2070,34 @@
         });
 
         socket.on('countdown', (sec) => {
-            showNotification(`Starting in ${sec}`, 1100);
-            updateWaitingMessage(0);
+            const waitingMessage = document.getElementById('waiting-message');
+            if (sec > 0) {
+                waitingMessage.textContent = `Starting in ${sec}...`;
+                waitingMessage.style.display = 'block';
+                waitingMessage.style.opacity = '1';
+            } else {
+                waitingMessage.style.opacity = '0';
+                setTimeout(() => {
+                    if (parseFloat(waitingMessage.style.opacity) === 0) {
+                        waitingMessage.style.display = 'none';
+                    }
+                }, 500);
+            }
         });
 
         socket.on('gameStart', () => {
             showNotification('GO!');
             isInRound = true;
             startRoundTimer(900);
+            
+            // Hide waiting message with fade out
+            const waitingMessage = document.getElementById('waiting-message');
+            waitingMessage.style.opacity = '0';
+            setTimeout(() => {
+                if (parseFloat(waitingMessage.style.opacity) === 0) {
+                    waitingMessage.style.display = 'none';
+                }
+            }, 500);
         });
 
         socket.on('assignBed', (data) => {
