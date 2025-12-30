@@ -810,53 +810,86 @@
             }
         }
 
-        // --- Enderpearl Functions (Minecraft-style) ---
+        // --- Minecraft-style Enderpearl Functions ---
         function createEnderpearlMesh(data) {
-            // Create a simple sphere for the enderpearl
-            const geometry = new THREE.SphereGeometry(0.2, 8, 8);
+            // Create a Minecraft-style enderpearl (small purple sphere with custom texture)
+            const geometry = new THREE.SphereGeometry(0.15, 8, 8);
             
-            // Use color as fallback, texture if available
-            const material = new THREE.MeshBasicMaterial({ 
-                color: 0x00ff88,
-                transparent: true,
-                opacity: 0.9
-            });
-            
-            // If texture is loaded, use it
+            let material;
             if (enderpearlTexture) {
-                material.map = enderpearlTexture;
-                material.color = new THREE.Color(0xffffff);
+                material = new THREE.MeshBasicMaterial({ 
+                    map: enderpearlTexture,
+                    transparent: true,
+                    opacity: 0.9
+                });
+            } else {
+                // Fallback: Purple color with green tint like Minecraft
+                material = new THREE.MeshBasicMaterial({ 
+                    color: 0x4a148c,
+                    transparent: true,
+                    opacity: 0.9
+                });
             }
             
             const pearl = new THREE.Mesh(geometry, material);
+            
+            // Position the pearl
             pearl.position.set(data.x, data.y, data.z);
             
+            // Add a glowing effect
+            const glowGeometry = new THREE.SphereGeometry(0.18, 8, 8);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: 0xba55d3,
+                transparent: true,
+                opacity: 0.3,
+                side: THREE.BackSide
+            });
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+            glow.position.copy(pearl.position);
+            pearl.add(glow);
+            
+            // Store interpolation data and physics properties
             pearl.userData = { 
                 id: data.id, 
                 type: 'enderpearl',
-                // Store interpolation data
+                vx: data.vx || 0,
+                vy: data.vy || 0,
+                vz: data.vz || 0,
+                gravity: 0.03,
+                drag: 0.99,
                 targetX: data.x,
                 targetY: data.y,
                 targetZ: data.z,
                 prevX: data.x,
                 prevY: data.y,
                 prevZ: data.z,
-                updateTime: Date.now()
+                updateTime: Date.now(),
+                glow: glow,
+                // Add rotation for visual effect
+                rotationSpeed: { x: 0.05, y: 0.03, z: 0.02 }
             };
-            scene.add(pearl);
             
+            scene.add(pearl);
             projectiles.set(data.id, pearl);
             
             return pearl;
         }
 
-        function updateEnderpearl(id, position) {
+        function updateEnderpearl(id, position, velocity) {
             const pearl = projectiles.get(id);
             if (pearl) {
-                // Store target position
+                // Store target position for interpolation
                 pearl.userData.targetX = position.x;
                 pearl.userData.targetY = position.y;
                 pearl.userData.targetZ = position.z;
+                
+                // Update velocity if provided
+                if (velocity) {
+                    pearl.userData.vx = velocity.x;
+                    pearl.userData.vy = velocity.y;
+                    pearl.userData.vz = velocity.z;
+                }
+                
                 pearl.userData.updateTime = Date.now();
             }
         }
@@ -864,7 +897,21 @@
         function removeEnderpearlMesh(id) {
             const pearl = projectiles.get(id);
             if (pearl) {
+                // Clean up glow mesh
+                if (pearl.userData.glow) {
+                    pearl.remove(pearl.userData.glow);
+                }
+                
                 scene.remove(pearl);
+                
+                // Dispose of materials and geometries to prevent memory leaks
+                if (pearl.material) {
+                    pearl.material.dispose();
+                }
+                if (pearl.geometry) {
+                    pearl.geometry.dispose();
+                }
+                
                 projectiles.delete(id);
             }
         }
@@ -1375,37 +1422,45 @@
                 lastGeneratorUpdate = time;
             }
 
-            // Interpolate enderpearl positions
+            // Update enderpearl physics
             projectiles.forEach((pearl, id) => {
                 if (pearl.userData.type === 'enderpearl') {
-                    // Smooth interpolation between positions
-                    const elapsed = Date.now() - pearl.userData.updateTime;
-                    const t = Math.min(elapsed / 50, 1); // Interpolate over 50ms
+                    // Apply physics locally for smoother movement
+                    const delta = Math.min((time - prevTime) / 1000, 0.05);
                     
-                    const newX = THREE.MathUtils.lerp(
-                        pearl.position.x,
-                        pearl.userData.targetX,
-                        t
-                    );
-                    const newY = THREE.MathUtils.lerp(
-                        pearl.position.y,
-                        pearl.userData.targetY,
-                        t
-                    );
-                    const newZ = THREE.MathUtils.lerp(
-                        pearl.position.z,
-                        pearl.userData.targetZ,
-                        t
-                    );
+                    // Apply gravity
+                    pearl.userData.vy -= pearl.userData.gravity * delta * 20;
                     
-                    pearl.position.set(newX, newY, newZ);
+                    // Apply drag
+                    pearl.userData.vx *= Math.pow(pearl.userData.drag, delta);
+                    pearl.userData.vz *= Math.pow(pearl.userData.drag, delta);
                     
-                    // Add a subtle rotation to make it look alive
-                    pearl.rotation.x += 0.05;
-                    pearl.rotation.y += 0.03;
+                    // Update position based on velocity
+                    pearl.position.x += pearl.userData.vx * delta * 20;
+                    pearl.position.y += pearl.userData.vy * delta * 20;
+                    pearl.position.z += pearl.userData.vz * delta * 20;
                     
-                    // Add a gentle floating motion
-                    pearl.position.y += Math.sin(time * 0.001) * 0.01;
+                    // Rotate the enderpearl
+                    pearl.rotation.x += pearl.userData.rotationSpeed.x;
+                    pearl.rotation.y += pearl.userData.rotationSpeed.y;
+                    pearl.rotation.z += pearl.userData.rotationSpeed.z;
+                    
+                    // Make the glow pulse
+                    if (pearl.userData.glow) {
+                        const pulse = 0.18 + Math.sin(time * 0.005) * 0.02;
+                        pearl.userData.glow.scale.set(pulse, pulse, pulse);
+                    }
+                    
+                    // Check for collision with blocks (client-side prediction)
+                    const checkX = Math.floor(pearl.position.x);
+                    const checkY = Math.floor(pearl.position.y);
+                    const checkZ = Math.floor(pearl.position.z);
+                    const blockKey = `${checkX},${checkY},${checkZ}`;
+                    
+                    if (pearl.position.y <= 0.1 || blocksMeshes.has(blockKey)) {
+                        // Remove enderpearl locally (server will confirm)
+                        removeEnderpearlMesh(id);
+                    }
                 }
             });
 
@@ -2038,9 +2093,9 @@
 
         socket.on('updateEnderpearl', (data) => {
             if (Array.isArray(data)) {
-                data.forEach(pearl => updateEnderpearl(pearl.id, pearl));
+                data.forEach(pearl => updateEnderpearl(pearl.id, pearl, {x: pearl.vx, y: pearl.vy, z: pearl.vz}));
             } else {
-                updateEnderpearl(data.id, data);
+                updateEnderpearl(data.id, data, {x: data.vx, y: data.vy, z: data.vz});
             }
         });
 
