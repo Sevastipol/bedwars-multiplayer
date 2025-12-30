@@ -45,6 +45,7 @@ let roundStartTime = null;
 let suddenDeath = false;
 let roundTimerInterval = null;
 let playerCheckInterval = null;
+let isCountdownActive = false;
 
 // Iron island positions (4 islands)
 const ironIslands = [
@@ -148,7 +149,9 @@ function getPlayersNeeded() {
 
 function updateWaitingMessages() {
     const playersNeeded = getPlayersNeeded();
-    io.emit('updateWaiting', playersNeeded);
+    if (!isCountdownActive) {
+        io.emit('updateWaiting', playersNeeded);
+    }
 }
 
 function startRoundTimer() {
@@ -368,6 +371,7 @@ function resetGame() {
     gameActive = false;
     suddenDeath = false;
     roundStartTime = null;
+    isCountdownActive = false;
     stopRoundTimer();
     
     // Start checking for players
@@ -382,7 +386,7 @@ function startPlayerCheck() {
     
     // Check every second if game should start
     playerCheckInterval = setInterval(() => {
-        if (!gameActive) {
+        if (!gameActive && !isCountdownActive) {
             const totalPlayers = players.size;
             const activePlayers = getActivePlayers();
             
@@ -391,8 +395,8 @@ function startPlayerCheck() {
             // If we have enough players and countdown isn't running, start countdown
             if (totalPlayers >= REQUIRED_PLAYERS && activePlayers.length < REQUIRED_PLAYERS && !countdownTimer) {
                 console.log('Starting countdown...');
+                isCountdownActive = true;
                 let count = 10;
-                io.emit('notification', 'Game starting in 10 seconds!');
                 
                 countdownTimer = setInterval(() => {
                     io.emit('countdown', count);
@@ -401,6 +405,7 @@ function startPlayerCheck() {
                     if (count < 0) {
                         clearInterval(countdownTimer);
                         countdownTimer = null;
+                        isCountdownActive = false;
                         
                         // Assign beds to all spectators
                         const assignedPlayers = [];
@@ -820,19 +825,25 @@ io.on('connection', (socket) => {
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
         
         const throwPower = 1.5;
+        const offset = 0.5; // Start in front of player to avoid immediate collision
+        
+        const startX = p.pos.x + (-Math.sin(p.rot.yaw) * Math.cos(p.rot.pitch) * offset);
+        const startY = p.pos.y + (p.crouch ? 1.3 : 1.6) + (-Math.sin(p.rot.pitch) * offset);
+        const startZ = p.pos.z + (-Math.cos(p.rot.yaw) * Math.cos(p.rot.pitch) * offset);
+        
         const velocity = {
             x: -Math.sin(p.rot.yaw) * Math.cos(p.rot.pitch) * throwPower,
             y: -Math.sin(p.rot.pitch) * throwPower,
             z: -Math.cos(p.rot.yaw) * Math.cos(p.rot.pitch) * throwPower
         };
         
-        const pearlId = `pearl-${socket.id}-${Date.now()}`;
+        const pearlId = `pearl-${socket.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const pearl = {
             id: pearlId,
             owner: socket.id,
-            x: p.pos.x,
-            y: p.pos.y + (p.crouch ? 1.3 : 1.6),
-            z: p.pos.z,
+            x: startX,
+            y: startY,
+            z: startZ,
             vx: velocity.x,
             vy: velocity.y,
             vz: velocity.z,
@@ -840,11 +851,16 @@ io.on('connection', (socket) => {
             drag: 0.99,
             lastUpdate: Date.now(),
             createdAt: Date.now(),
-            landed: false
+            landed: false,
+            lastBroadcast: Date.now(),
+            prevX: startX,
+            prevY: startY,
+            prevZ: startZ
         };
         
         enderpearls.set(pearlId, pearl);
         
+        // Emit to ALL clients including the thrower
         io.emit('addEnderpearl', {
             id: pearl.id,
             x: pearl.x,
@@ -887,6 +903,7 @@ io.on('connection', (socket) => {
                 if (activePlayers.length < REQUIRED_PLAYERS) {
                     clearInterval(countdownTimer);
                     countdownTimer = null;
+                    isCountdownActive = false;
                     io.emit('notification', 'Player left. Countdown cancelled.');
                     occupiedIronIslands = [];
                     initWorld();
@@ -939,20 +956,28 @@ setInterval(() => {
             if (pearl.landed) return;
             
             const deltaTime = (now - pearl.lastUpdate) / 1000;
-            if (deltaTime <= 0) return;
+            if (deltaTime <= 0) {
+                pearl.lastUpdate = now;
+                return;
+            }
             
-            pearl.lastUpdate = now;
+            // Store previous position for interpolation
+            pearl.prevX = pearl.x;
+            pearl.prevY = pearl.y;
+            pearl.prevZ = pearl.z;
             
             // Apply gravity
-            pearl.vy -= pearl.gravity;
+            pearl.vy -= pearl.gravity * deltaTime * 20;
             
             // Apply velocity with air resistance
-            pearl.vx *= pearl.drag;
-            pearl.vz *= pearl.drag;
+            pearl.vx *= Math.pow(pearl.drag, deltaTime);
+            pearl.vz *= Math.pow(pearl.drag, deltaTime);
             
             pearl.x += pearl.vx * deltaTime * 20;
             pearl.y += pearl.vy * deltaTime * 20;
             pearl.z += pearl.vz * deltaTime * 20;
+            
+            pearl.lastUpdate = now;
             
             // Check for collision with blocks or ground
             const checkX = Math.floor(pearl.x);
@@ -965,26 +990,39 @@ setInterval(() => {
                 // Teleport player with damage (Minecraft: 5 damage = 2.5 hearts)
                 const player = players.get(pearl.owner);
                 if (player && !player.spectator) {
-                    player.health -= 2.5; // 2.5 hearts damage
+                    // Apply damage (2.5 hearts = 5 damage points)
+                    player.health = Math.max(0, player.health - 2.5);
                     
-                    // Teleport player
-                    player.pos.x = pearl.x;
-                    player.pos.y = pearl.y + 0.5;
-                    player.pos.z = pearl.z;
+                    // Teleport player to landing position
+                    const teleportX = pearl.x;
+                    const teleportY = pearl.y + 1; // Place player above ground
+                    const teleportZ = pearl.z;
                     
-                    // Make sure player is on solid ground
-                    while (player.pos.y > 0 && blocks.has(blockKey(
-                        Math.floor(player.pos.x), 
-                        Math.floor(player.pos.y - 1), 
-                        Math.floor(player.pos.z)
-                    ))) {
-                        player.pos.y += 1;
+                    // Find safe teleport position (ensure not inside blocks)
+                    let safeY = teleportY;
+                    for (let yOffset = 0; yOffset < 3; yOffset++) {
+                        const testY = Math.floor(teleportY + yOffset);
+                        if (!blocks.has(blockKey(Math.floor(teleportX), testY, Math.floor(teleportZ)))) {
+                            safeY = teleportY + yOffset;
+                            break;
+                        }
                     }
+                    
+                    player.pos.x = teleportX;
+                    player.pos.y = safeY + 0.1;
+                    player.pos.z = teleportZ;
                     
                     io.to(pearl.owner).emit('teleport', {
                         x: player.pos.x,
                         y: player.pos.y,
                         z: player.pos.z
+                    });
+                    
+                    // Update health for all clients
+                    io.emit('playerHit', {
+                        attackerId: null,
+                        targetId: pearl.owner,
+                        newHealth: player.health
                     });
                     
                     // Check if player died from enderpearl damage
@@ -1004,23 +1042,13 @@ setInterval(() => {
                                 pos: player.pos, 
                                 rot: player.rot 
                             });
-                            io.emit('playerHit', {
-                                attackerId: null,
-                                targetId: pearl.owner,
-                                newHealth: player.health
-                            });
                             io.to(pearl.owner).emit('notification', 'You died by enderpearl and respawned at your bed!');
                         } else {
                             // Player eliminated by enderpearl
                             eliminatePlayer(pearl.owner, null);
                         }
                     } else {
-                        // Just update health if player survived
-                        io.emit('playerHit', {
-                            attackerId: null,
-                            targetId: pearl.owner,
-                            newHealth: player.health
-                        });
+                        io.to(pearl.owner).emit('notification', `Teleported! Took ${2.5} hearts of damage.`);
                     }
                 }
                 
@@ -1029,16 +1057,23 @@ setInterval(() => {
                     enderpearls.delete(id);
                     io.emit('removeEnderpearl', id);
                 }, 100);
-            } else if (now - pearl.createdAt > 30000) { // 30 second timeout
+            } else if (now - pearl.createdAt > 10000) { // 10 second timeout (reduced from 30)
                 enderpearls.delete(id);
                 io.emit('removeEnderpearl', id);
             } else {
-                pearlUpdates.push({
-                    id: pearl.id,
-                    x: pearl.x,
-                    y: pearl.y,
-                    z: pearl.z
-                });
+                // Send more frequent updates for smoother movement
+                if (now - pearl.lastBroadcast > 50) {
+                    pearlUpdates.push({
+                        id: pearl.id,
+                        x: pearl.x,
+                        y: pearl.y,
+                        z: pearl.z,
+                        prevX: pearl.prevX,
+                        prevY: pearl.prevY,
+                        prevZ: pearl.prevZ
+                    });
+                    pearl.lastBroadcast = now;
+                }
             }
         });
         
