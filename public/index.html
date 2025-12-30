@@ -428,7 +428,6 @@
         let roundTimerInterval = null;
         let isInRound = false;
         let wasBuying = false; // Flag for buy
-        let lastEnderpearlThrow = 0; // Client-side cooldown tracker
 
         // --- Config ---
         const BLOCK_TYPES = {
@@ -664,38 +663,7 @@
             emeraldSword: 'https://i.ibb.co/przKkdMP/pixil-frame-0-12.png'
         };
 
-        // Preload enderpearl texture to ensure it's always visible
-        const preloadEnderpearlTexture = () => {
-            return new Promise((resolve) => {
-                textureLoader.load(TEXTURE_URLS.enderpearl, (texture) => {
-                    texture.magFilter = THREE.NearestFilter;
-                    texture.minFilter = THREE.NearestFilter;
-                    enderpearlTexture = texture;
-                    console.log('Enderpearl texture loaded');
-                    resolve();
-                }, undefined, (error) => {
-                    console.error('Error loading enderpearl texture:', error);
-                    // Create a fallback texture
-                    const canvas = document.createElement('canvas');
-                    canvas.width = 64;
-                    canvas.height = 64;
-                    const ctx = canvas.getContext('2d');
-                    ctx.fillStyle = '#00ff88';
-                    ctx.fillRect(0, 0, 64, 64);
-                    ctx.fillStyle = '#ffffff';
-                    ctx.font = 'bold 20px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText('EP', 32, 32);
-                    enderpearlTexture = new THREE.CanvasTexture(canvas);
-                    enderpearlTexture.magFilter = THREE.NearestFilter;
-                    enderpearlTexture.minFilter = THREE.NearestFilter;
-                    resolve();
-                });
-            });
-        };
-
-        // Load other textures
+        // Load textures
         textureLoader.load(TEXTURE_URLS.grass, (texture) => {
             texture.magFilter = THREE.NearestFilter;
             texture.minFilter = THREE.NearestFilter;
@@ -746,6 +714,12 @@
             emeraldTexture = texture;
         });
 
+        textureLoader.load(TEXTURE_URLS.enderpearl, (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            enderpearlTexture = texture;
+        });
+
         textureLoader.load(TEXTURE_URLS.woodenSword, (texture) => {
             texture.magFilter = THREE.NearestFilter;
             texture.minFilter = THREE.NearestFilter;
@@ -793,9 +767,6 @@
         };
         loadBreakingTextures();
 
-        // Preload enderpearl texture
-        preloadEnderpearlTexture();
-
         // --- World Generation ---
         function addBlockMesh(x, y, z, type) {
             const blockData = BLOCK_TYPES[type];
@@ -832,41 +803,18 @@
             }
         }
 
-        // --- Enderpearl Functions (Minecraft-style) - FIXED VERSION ---
+        // --- Enderpearl Functions (Minecraft-style) ---
         function createEnderpearlMesh(data) {
-            // Create a simple material first (even if texture isn't loaded)
-            let material;
+            if (!enderpearlTexture) return null;
             
-            // Try to use texture if available, otherwise use color
-            if (enderpearlTexture && enderpearlTexture.image && enderpearlTexture.image.complete) {
-                material = new THREE.SpriteMaterial({ 
-                    map: enderpearlTexture,
-                    transparent: true,
-                    opacity: 0.9,
-                    sizeAttenuation: true
-                });
-            } else {
-                // Fallback material with color
-                material = new THREE.SpriteMaterial({ 
-                    color: 0x00ff88,
-                    transparent: true,
-                    opacity: 0.9,
-                    sizeAttenuation: true
-                });
-                
-                // Try to load texture in background
-                if (!enderpearlTexture && TEXTURE_URLS.enderpearl) {
-                    textureLoader.load(TEXTURE_URLS.enderpearl, (texture) => {
-                        texture.magFilter = THREE.NearestFilter;
-                        texture.minFilter = THREE.NearestFilter;
-                        enderpearlTexture = texture;
-                        material.map = enderpearlTexture;
-                        material.needsUpdate = true;
-                    });
-                }
-            }
+            const spriteMaterial = new THREE.SpriteMaterial({ 
+                map: enderpearlTexture,
+                transparent: true,
+                opacity: 0.9,
+                sizeAttenuation: true
+            });
             
-            const pearl = new THREE.Sprite(material);
+            const pearl = new THREE.Sprite(spriteMaterial);
             pearl.position.set(data.x, data.y, data.z);
             
             const baseScale = 0.3;
@@ -875,8 +823,7 @@
             pearl.userData = { 
                 id: data.id, 
                 type: 'enderpearl',
-                baseScale: baseScale,
-                material: material
+                baseScale: baseScale
             };
             scene.add(pearl);
             
@@ -889,14 +836,11 @@
             const pearl = projectiles.get(id);
             if (pearl) {
                 pearl.position.set(position.x, position.y, position.z);
-                
-                // Make enderpearl face camera (billboard effect)
                 pearl.lookAt(camera.position);
                 
-                // Calculate scale based on distance for perspective
                 const distance = camera.position.distanceTo(pearl.position);
                 const baseScale = pearl.userData.baseScale || 0.3;
-                const constant = 10;
+                const constant = 5;
                 let scale = baseScale * (constant / Math.max(1, distance));
                 scale = Math.max(0.1, Math.min(scale, 1.0));
                 
@@ -907,20 +851,8 @@
         function removeEnderpearlMesh(id) {
             const pearl = projectiles.get(id);
             if (pearl) {
-                // Clean up material
-                if (pearl.userData.material) {
-                    pearl.userData.material.dispose();
-                }
-                
                 scene.remove(pearl);
-                
-                // Remove from the map
                 projectiles.delete(id);
-                
-                // Clean up any geometry
-                if (pearl.geometry) {
-                    pearl.geometry.dispose();
-                }
             }
         }
 
@@ -1328,15 +1260,7 @@
                 
                 // Check if we have an enderpearl selected
                 if (currentSlot && currentSlot.type === 'Enderpearl' && currentSlot.count > 0) {
-                    // Check client-side cooldown (0.1 seconds = 100ms)
-                    const now = Date.now();
-                    if (now - lastEnderpearlThrow < 100) {
-                        socket.emit('notification', 'Enderpearl cooldown!');
-                        return;
-                    }
-                    
                     socket.emit('throwEnderpearl');
-                    lastEnderpearlThrow = now;
                     return;
                 }
                 
@@ -2083,9 +2007,8 @@
             wasBuying = false;
         });
 
-        // Enderpearl events - FIXED
+        // Enderpearl events
         socket.on('addEnderpearl', (data) => {
-            console.log('Adding enderpearl:', data.id);
             createEnderpearlMesh(data);
         });
 
@@ -2098,7 +2021,6 @@
         });
 
         socket.on('removeEnderpearl', (id) => {
-            console.log('Removing enderpearl:', id);
             removeEnderpearlMesh(id);
         });
 
