@@ -262,6 +262,62 @@ function assignPlayerToIsland(playerId) {
     return null;
 }
 
+// New function to properly eliminate a player
+function eliminatePlayer(playerId, eliminatorId) {
+    const p = players.get(playerId);
+    if (!p) return;
+    
+    p.spectator = true;
+    p.health = PLAYER_MAX_HEALTH;
+    p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
+    
+    // Free up island
+    if (p.bedPos) {
+        for (let i = 0; i < ironIslands.length; i++) {
+            if (ironIslands[i].bedX === p.bedPos.x && 
+                ironIslands[i].bedY === p.bedPos.y && 
+                ironIslands[i].bedZ === p.bedPos.z) {
+                const index = occupiedIronIslands.indexOf(i);
+                if (index > -1) {
+                    occupiedIronIslands.splice(index, 1);
+                }
+                break;
+            }
+        }
+        p.bedPos = null;
+    }
+    
+    io.to(playerId).emit('setSpectator', true);
+    io.to(playerId).emit('respawn', { 
+        pos: p.pos, 
+        rot: p.rot 
+    });
+    io.to(playerId).emit('notification', 'Eliminated! You are now a spectator.');
+    
+    io.emit('playerEliminated', {
+        eliminatedId: playerId,
+        eliminatorId: eliminatorId
+    });
+    
+    // Check if game should end (only if there's 1 or fewer active players left)
+    const activePlayers = getActivePlayers();
+    console.log(`Active players after elimination: ${activePlayers.length}`);
+    
+    if (activePlayers.length <= 1) {
+        gameActive = false;
+        let winnerId = null;
+        if (activePlayers.length === 1) {
+            winnerId = activePlayers[0].id;
+            console.log(`Game over! Winner: ${winnerId}`);
+        } else {
+            console.log('Game over! No winner.');
+        }
+        io.emit('gameEnd', { winner: winnerId });
+        stopRoundTimer();
+        setTimeout(resetGame, 5000);
+    }
+}
+
 function resetGame() {
     console.log('Resetting game...');
     
@@ -652,6 +708,14 @@ io.on('connection', (socket) => {
         deductCurrency(p.currency, data.cost);
         socket.emit('updateCurrency', { ...p.currency });
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
+        
+        // If it's a weapon and player has it selected, update equipped weapon
+        if (data.isWeapon && p.selected !== null) {
+            const slot = p.inventory[p.selected];
+            if (slot && slot.type === btype) {
+                p.equippedWeapon = btype;
+            }
+        }
     });
 
     // Player combat
@@ -731,50 +795,8 @@ io.on('connection', (socket) => {
                 
                 io.to(targetId).emit('notification', 'You died and respawned at your bed!');
             } else {
-                target.spectator = true;
-                target.health = PLAYER_MAX_HEALTH;
-                target.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
-                
-                io.to(targetId).emit('setSpectator', true);
-                io.to(targetId).emit('respawn', { 
-                    pos: target.pos, 
-                    rot: target.rot 
-                });
-                io.to(targetId).emit('notification', 'Eliminated! You are now a spectator.');
-                
-                // Free up island
-                if (target.bedPos) {
-                    for (let i = 0; i < ironIslands.length; i++) {
-                        if (ironIslands[i].bedX === target.bedPos.x && 
-                            ironIslands[i].bedY === target.bedPos.y && 
-                            ironIslands[i].bedZ === target.bedPos.z) {
-                            const index = occupiedIronIslands.indexOf(i);
-                            if (index > -1) {
-                                occupiedIronIslands.splice(index, 1);
-                            }
-                            break;
-                        }
-                    }
-                    target.bedPos = null;
-                }
-                
-                io.emit('playerEliminated', {
-                    eliminatedId: targetId,
-                    eliminatorId: attacker.id
-                });
-                
-                // Check if game should end
-                const activePlayers = getActivePlayers();
-                if (activePlayers.length <= 1) {
-                    gameActive = false;
-                    let winnerId = null;
-                    if (activePlayers.length === 1) {
-                        winnerId = Array.from(players.entries()).find(([id, p]) => !p.spectator)[0];
-                    }
-                    io.emit('gameEnd', { winner: winnerId });
-                    stopRoundTimer();
-                    setTimeout(resetGame, 5000);
-                }
+                // Use the new eliminatePlayer function
+                eliminatePlayer(targetId, attacker.id);
             }
         }
     });
@@ -965,32 +987,35 @@ setInterval(() => {
                         z: player.pos.z
                     });
                     
-                    // Update health
+                    // Check if player died from enderpearl damage
                     if (player.health <= 0) {
-                        player.spectator = true;
-                        player.health = PLAYER_MAX_HEALTH;
-                        player.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
+                        const bedKey = player.bedPos ? blockKey(player.bedPos.x, player.bedPos.y, player.bedPos.z) : null;
+                        const hasBed = player.bedPos && blocks.get(bedKey) === 'Bed';
                         
-                        io.to(pearl.owner).emit('setSpectator', true);
-                        io.to(pearl.owner).emit('respawn', { 
-                            pos: player.pos, 
-                            rot: player.rot 
-                        });
-                        io.to(pearl.owner).emit('notification', 'Eliminated by Ender pearl!');
-                        
-                        // Check game end conditions
-                        const activePlayers = getActivePlayers();
-                        if (activePlayers.length <= 1) {
-                            gameActive = false;
-                            let winnerId = null;
-                            if (activePlayers.length === 1) {
-                                winnerId = Array.from(players.entries()).find(([id, p]) => !p.spectator)[0];
-                            }
-                            io.emit('gameEnd', { winner: winnerId });
-                            stopRoundTimer();
-                            setTimeout(resetGame, 5000);
+                        if (hasBed) {
+                            player.health = PLAYER_MAX_HEALTH;
+                            player.pos.x = player.bedPos.x + 0.5;
+                            player.pos.y = player.bedPos.y + 2;
+                            player.pos.z = player.bedPos.z + 0.5;
+                            player.rot.yaw = 0;
+                            player.rot.pitch = 0;
+                            
+                            io.to(pearl.owner).emit('respawn', { 
+                                pos: player.pos, 
+                                rot: player.rot 
+                            });
+                            io.emit('playerHit', {
+                                attackerId: null,
+                                targetId: pearl.owner,
+                                newHealth: player.health
+                            });
+                            io.to(pearl.owner).emit('notification', 'You died by enderpearl and respawned at your bed!');
+                        } else {
+                            // Player eliminated by enderpearl
+                            eliminatePlayer(pearl.owner, null);
                         }
                     } else {
+                        // Just update health if player survived
                         io.emit('playerHit', {
                             attackerId: null,
                             targetId: pearl.owner,
@@ -1038,38 +1063,8 @@ setInterval(() => {
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
                     io.to(id).emit('notification', 'You fell into the void and respawned at your bed!');
                 } else {
-                    p.spectator = true;
-                    p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
-                    io.to(id).emit('setSpectator', true);
-                    io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
-                    io.to(id).emit('notification', 'Eliminated! You are now a spectator.');
-                    
-                    if (p.bedPos) {
-                        for (let i = 0; i < ironIslands.length; i++) {
-                            if (ironIslands[i].bedX === p.bedPos.x && 
-                                ironIslands[i].bedY === p.bedPos.y && 
-                                ironIslands[i].bedZ === p.bedPos.z) {
-                                const index = occupiedIronIslands.indexOf(i);
-                                if (index > -1) {
-                                    occupiedIronIslands.splice(index, 1);
-                                }
-                                break;
-                            }
-                        }
-                        p.bedPos = null;
-                    }
-                    
-                    const activePlayers = getActivePlayers();
-                    if (activePlayers.length <= 1) {
-                        gameActive = false;
-                        let winnerId = null;
-                        if (activePlayers.length === 1) {
-                            winnerId = Array.from(players.entries()).find(([id, p]) => !p.spectator)[0];
-                        }
-                        io.emit('gameEnd', { winner: winnerId });
-                        stopRoundTimer();
-                        setTimeout(resetGame, 5000);
-                    }
+                    // Player eliminated by falling into void
+                    eliminatePlayer(id, null);
                 }
                 p.lastRespawn = now;
             }
