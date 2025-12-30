@@ -872,7 +872,6 @@
             });
             
             const sword = new THREE.Sprite(material);
-            sword.scale.set(0.5, 0.5, 1);
             
             if (playerId) {
                 sword.userData = { type: 'sword', playerId: playerId, swordType: type };
@@ -893,6 +892,9 @@
             if (currentSlot && currentSlot.type && BLOCK_TYPES[currentSlot.type] && BLOCK_TYPES[currentSlot.type].isWeapon) {
                 swordInHand = createSwordMesh(currentSlot.type);
                 if (swordInHand) {
+                    // Position sword in view (lower right corner, like Minecraft)
+                    swordInHand.position.set(-0.4, -0.3, -0.5);
+                    swordInHand.scale.set(0.6, 0.6, 1);
                     scene.add(swordInHand);
                 }
             }
@@ -913,8 +915,10 @@
             if (swordType && BLOCK_TYPES[swordType] && BLOCK_TYPES[swordType].isWeapon) {
                 const sword = createSwordMesh(swordType, playerId);
                 if (sword) {
-                    sword.position.set(-0.3, 0.8, 0); // Position in hand
-                    sword.scale.set(0.3, 0.3, 1);
+                    // Position in right hand (outside the body)
+                    sword.position.set(-0.7, 0.8, 0.2); // Position in right hand
+                    sword.scale.set(0.4, 0.4, 1);
+                    
                     op.group.add(sword);
                     playerSwords.set(playerId, sword);
                 }
@@ -1429,18 +1433,20 @@
             // Update sword in hand position (bobbing animation)
             if (swordInHand) {
                 swordBobTime += delta;
-                const bobAmount = 0.05;
+                const bobAmount = 0.02;
                 const bobSpeed = 5;
-                
-                const xPos = -0.3;
-                const yPos = -0.2;
-                const zPos = -0.5;
                 
                 const bobOffset = Math.sin(swordBobTime * bobSpeed) * bobAmount;
                 
-                swordInHand.position.set(xPos, yPos + bobOffset, zPos);
+                // Position in lower right corner with bobbing
+                swordInHand.position.set(-0.4, -0.3 + bobOffset, -0.5);
+                
+                // Make sword face camera (billboard effect)
                 swordInHand.lookAt(camera.position);
-                swordInHand.rotation.z += Math.PI / 4; // Tilt for better visibility
+                
+                // Add slight rotation to make it look more natural
+                swordInHand.rotation.x = -0.2; // Tilt forward slightly
+                swordInHand.rotation.z = Math.PI / 6; // Rotate 30 degrees for better visibility
             }
 
             if (controls.isLocked) {
@@ -1564,6 +1570,15 @@
                     const health = playerHealth.get(id);
                     data.healthBar.style.width = `${health * 10}%`;
                     data.healthBar.style.backgroundColor = health > 5 ? '#4CAF50' : health > 2 ? '#FFA500' : '#FF0000';
+                }
+                
+                // Update sword for other players
+                if (playerSwords.has(id)) {
+                    const sword = playerSwords.get(id);
+                    // Make sword look at camera (billboard effect)
+                    sword.lookAt(camera.position);
+                    // Add slight rotation for better visibility
+                    sword.rotation.z = Math.PI / 4;
                 }
             });
 
@@ -1816,7 +1831,8 @@
                 targetCrouch: false,
                 crouch: false,
                 spectator: false,
-                healthBar: null
+                healthBar: null,
+                equippedWeapon: equippedWeapon
             });
 
             // Store initial health
@@ -1910,6 +1926,7 @@
                 op.targetRot = rot;
                 op.targetCrouch = crouch;
                 op.spectator = spectator;
+                op.equippedWeapon = equippedWeapon;
             });
         });
 
@@ -1921,6 +1938,7 @@
             op.targetRot = rot;
             op.targetCrouch = crouch;
             op.spectator = spectator;
+            op.equippedWeapon = equippedWeapon;
         });
 
         socket.on('playersUpdate', (states) => {
