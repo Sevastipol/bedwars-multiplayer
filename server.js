@@ -810,7 +810,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Enderpearl throwing - based purely on player's view direction
+    // Minecraft-style Enderpearl throwing
     socket.on('throwEnderpearl', () => {
         const p = players.get(socket.id);
         if (p.spectator) return;
@@ -828,37 +828,27 @@ io.on('connection', (socket) => {
         
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
         
-        // Calculate throw direction based purely on player's rotation
-        // This is independent of what block they're looking at
-        const throwPower = 1.5;
-        
         // Calculate eye position
-        const eyeHeight = p.crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
+        const eyeHeight = p.crouch ? 1.3 : 1.6;
         const eyeX = p.pos.x;
         const eyeY = p.pos.y - eyeHeight;
         const eyeZ = p.pos.z;
         
-        // Calculate direction from player's yaw and pitch
+        // Calculate throw direction from player's rotation
         const yaw = p.rot.yaw;
         const pitch = p.rot.pitch;
         
-        // Calculate forward vector from yaw and pitch
-        const forwardX = -Math.sin(yaw) * Math.cos(pitch);
-        const forwardY = -Math.sin(pitch);
-        const forwardZ = -Math.cos(yaw) * Math.cos(pitch);
+        // Minecraft-style throw velocity
+        const throwPower = 1.5;
+        const vx = -Math.sin(yaw) * Math.cos(pitch) * throwPower;
+        const vy = -Math.sin(pitch) * throwPower;
+        const vz = -Math.cos(yaw) * Math.cos(pitch) * throwPower;
         
-        // Start position is slightly in front of player's eyes
-        const startOffset = 0.5;
-        const startX = eyeX + forwardX * startOffset;
-        const startY = eyeY + forwardY * startOffset;
-        const startZ = eyeZ + forwardZ * startOffset;
-        
-        // Velocity is forward direction times throw power
-        const velocity = {
-            x: forwardX * throwPower,
-            y: forwardY * throwPower,
-            z: forwardZ * throwPower
-        };
+        // Start position slightly in front of player's face
+        const offset = 0.5;
+        const startX = eyeX + vx * offset;
+        const startY = eyeY + vy * offset;
+        const startZ = eyeZ + vz * offset;
         
         const pearlId = `pearl-${socket.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const pearl = {
@@ -867,31 +857,30 @@ io.on('connection', (socket) => {
             x: startX,
             y: startY,
             z: startZ,
-            vx: velocity.x,
-            vy: velocity.y,
-            vz: velocity.z,
+            vx: vx,
+            vy: vy,
+            vz: vz,
             gravity: 0.03,
             drag: 0.99,
             lastUpdate: Date.now(),
             createdAt: Date.now(),
             landed: false,
-            lastBroadcast: Date.now(),
-            prevX: startX,
-            prevY: startY,
-            prevZ: startZ
+            lastBroadcast: Date.now()
         };
         
         enderpearls.set(pearlId, pearl);
         
-        // Emit to ALL clients including the thrower
+        // Emit to all clients
         io.emit('addEnderpearl', {
             id: pearl.id,
             x: pearl.x,
             y: pearl.y,
-            z: pearl.z
+            z: pearl.z,
+            vx: pearl.vx,
+            vy: pearl.vy,
+            vz: pearl.vz
         });
         
-        // Send notification
         socket.emit('notification', 'Enderpearl thrown!');
     });
 
@@ -987,18 +976,14 @@ setInterval(() => {
                 return;
             }
             
-            // Store previous position for interpolation
-            pearl.prevX = pearl.x;
-            pearl.prevY = pearl.y;
-            pearl.prevZ = pearl.z;
-            
             // Apply gravity
             pearl.vy -= pearl.gravity * deltaTime * 20;
             
-            // Apply velocity with air resistance
+            // Apply air resistance
             pearl.vx *= Math.pow(pearl.drag, deltaTime);
             pearl.vz *= Math.pow(pearl.drag, deltaTime);
             
+            // Update position
             pearl.x += pearl.vx * deltaTime * 20;
             pearl.y += pearl.vy * deltaTime * 20;
             pearl.z += pearl.vz * deltaTime * 20;
@@ -1013,30 +998,28 @@ setInterval(() => {
             if (pearl.y <= 0.1 || blocks.has(blockKey(checkX, checkY, checkZ))) {
                 pearl.landed = true;
                 
-                // Teleport player with damage (Minecraft: 5 damage = 2.5 hearts)
+                // Teleport player with 5 damage (2.5 hearts) - Minecraft exact damage
                 const player = players.get(pearl.owner);
                 if (player && !player.spectator) {
-                    // Apply damage (2.5 hearts = 5 damage points)
-                    player.health = Math.max(0, player.health - 2.5);
-                    
-                    // Teleport player to landing position
-                    const teleportX = pearl.x;
-                    const teleportY = pearl.y + 1; // Place player above ground
-                    const teleportZ = pearl.z;
+                    // Apply 5 damage (2.5 hearts)
+                    player.health = Math.max(0, player.health - 5);
                     
                     // Find safe teleport position (ensure not inside blocks)
-                    let safeY = teleportY;
+                    let safeY = pearl.y + 0.5; // Start half a block above landing
                     for (let yOffset = 0; yOffset < 3; yOffset++) {
-                        const testY = Math.floor(teleportY + yOffset);
-                        if (!blocks.has(blockKey(Math.floor(teleportX), testY, Math.floor(teleportZ)))) {
-                            safeY = teleportY + yOffset;
+                        const testY = Math.floor(safeY + yOffset);
+                        if (!blocks.has(blockKey(Math.floor(pearl.x), testY, Math.floor(pearl.z)))) {
+                            safeY = safeY + yOffset;
                             break;
                         }
                     }
                     
-                    player.pos.x = teleportX;
-                    player.pos.y = safeY + 0.1;
-                    player.pos.z = teleportZ;
+                    // Ensure player doesn't teleport into void
+                    safeY = Math.max(safeY, 1.1);
+                    
+                    player.pos.x = pearl.x;
+                    player.pos.y = safeY;
+                    player.pos.z = pearl.z;
                     
                     io.to(pearl.owner).emit('teleport', {
                         x: player.pos.x,
@@ -1068,35 +1051,36 @@ setInterval(() => {
                                 pos: player.pos, 
                                 rot: player.rot 
                             });
+                            
                             io.to(pearl.owner).emit('notification', 'You died by enderpearl and respawned at your bed!');
                         } else {
                             // Player eliminated by enderpearl
                             eliminatePlayer(pearl.owner, null);
                         }
                     } else {
-                        io.to(pearl.owner).emit('notification', `Teleported! Took ${2.5} hearts of damage.`);
+                        io.to(pearl.owner).emit('notification', `Teleported! Took 5 damage (2.5 hearts).`);
                     }
                 }
                 
-                // Remove enderpearl after a short delay
+                // Remove enderpearl after teleportation
                 setTimeout(() => {
                     enderpearls.delete(id);
                     io.emit('removeEnderpearl', id);
                 }, 100);
-            } else if (now - pearl.createdAt > 10000) { // 10 second timeout (reduced from 30)
+            } else if (now - pearl.createdAt > 30000) { // 30 second timeout
                 enderpearls.delete(id);
                 io.emit('removeEnderpearl', id);
             } else {
-                // Send more frequent updates for smoother movement
+                // Send frequent updates for smooth interpolation
                 if (now - pearl.lastBroadcast > 50) {
                     pearlUpdates.push({
                         id: pearl.id,
                         x: pearl.x,
                         y: pearl.y,
                         z: pearl.z,
-                        prevX: pearl.prevX,
-                        prevY: pearl.prevY,
-                        prevZ: pearl.prevZ
+                        vx: pearl.vx,
+                        vy: pearl.vy,
+                        vz: pearl.vz
                     });
                     pearl.lastBroadcast = now;
                 }
