@@ -33,10 +33,6 @@ const ROUND_DURATION = 15 * 60 * 1000;
 const REQUIRED_PLAYERS = 2;
 const PLAYER_MAX_HEALTH = 10;
 
-// Physics constants
-const EYE_HEIGHT = 1.6;
-const CROUCH_HEIGHT = 1.3;
-
 // State
 const blocks = new Map();
 const pickups = new Map();
@@ -49,7 +45,6 @@ let roundStartTime = null;
 let suddenDeath = false;
 let roundTimerInterval = null;
 let playerCheckInterval = null;
-let isCountdownActive = false;
 
 // Iron island positions (4 islands)
 const ironIslands = [
@@ -153,9 +148,7 @@ function getPlayersNeeded() {
 
 function updateWaitingMessages() {
     const playersNeeded = getPlayersNeeded();
-    if (!isCountdownActive) {
-        io.emit('updateWaiting', playersNeeded);
-    }
+    io.emit('updateWaiting', playersNeeded);
 }
 
 function startRoundTimer() {
@@ -306,6 +299,9 @@ function eliminatePlayer(playerId, eliminatorId) {
         eliminatorId: eliminatorId
     });
     
+    // Remove player body for all other players
+    socket.broadcast.emit('removePlayer', playerId);
+    
     // Check if game should end (only if there's 1 or fewer active players left)
     const activePlayers = getActivePlayers();
     console.log(`Active players after elimination: ${activePlayers.length}`);
@@ -350,6 +346,7 @@ function resetGame() {
         p.health = PLAYER_MAX_HEALTH;
         p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
         p.equippedWeapon = null;
+        p.lastEnderpearlThrow = 0;
         
         io.to(id).emit('setSpectator', true);
         io.to(id).emit('respawn', {
@@ -375,7 +372,6 @@ function resetGame() {
     gameActive = false;
     suddenDeath = false;
     roundStartTime = null;
-    isCountdownActive = false;
     stopRoundTimer();
     
     // Start checking for players
@@ -390,7 +386,7 @@ function startPlayerCheck() {
     
     // Check every second if game should start
     playerCheckInterval = setInterval(() => {
-        if (!gameActive && !isCountdownActive) {
+        if (!gameActive) {
             const totalPlayers = players.size;
             const activePlayers = getActivePlayers();
             
@@ -399,8 +395,8 @@ function startPlayerCheck() {
             // If we have enough players and countdown isn't running, start countdown
             if (totalPlayers >= REQUIRED_PLAYERS && activePlayers.length < REQUIRED_PLAYERS && !countdownTimer) {
                 console.log('Starting countdown...');
-                isCountdownActive = true;
                 let count = 10;
+                io.emit('notification', 'Game starting in 10 seconds!');
                 
                 countdownTimer = setInterval(() => {
                     io.emit('countdown', count);
@@ -409,7 +405,6 @@ function startPlayerCheck() {
                     if (count < 0) {
                         clearInterval(countdownTimer);
                         countdownTimer = null;
-                        isCountdownActive = false;
                         
                         // Assign beds to all spectators
                         const assignedPlayers = [];
@@ -482,7 +477,8 @@ io.on('connection', (socket) => {
         health: PLAYER_MAX_HEALTH,
         id: socket.id,
         lastHitTime: 0,
-        equippedWeapon: null
+        equippedWeapon: null,
+        lastEnderpearlThrow: 0
     };
     
     players.set(socket.id, playerState);
@@ -601,7 +597,7 @@ io.on('connection', (socket) => {
             }
             
             // Check distance for bed breaking (same as other blocks)
-            const eyeHeight = p.crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
+            const eyeHeight = p.crouch ? 1.3 : 1.6;
             const playerEyeY = p.pos.y - eyeHeight;
             const blockCenterY = y + 0.5;
             
@@ -621,7 +617,7 @@ io.on('connection', (socket) => {
             return;
         }
         
-        const eyeHeight = p.crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
+        const eyeHeight = p.crouch ? 1.3 : 1.6;
         const playerEyeY = p.pos.y - eyeHeight;
         const blockCenterY = y + 0.5;
         
@@ -661,7 +657,7 @@ io.on('connection', (socket) => {
             return;
         }
         
-        const eyeHeight = p.crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
+        const eyeHeight = p.crouch ? 1.3 : 1.6;
         const playerEyeY = p.pos.y - eyeHeight;
         const blockCenterY = y + 0.5;
         
@@ -810,8 +806,8 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Minecraft-style Enderpearl throwing
-    socket.on('throwEnderpearl', () => {
+    // SIMPLE Enderpearl throwing - NEW VERSION
+    socket.on('throwEnderpearl', (targetPos) => {
         const p = players.get(socket.id);
         if (p.spectator) return;
         
@@ -821,67 +817,67 @@ io.on('connection', (socket) => {
             return;
         }
         
+        // Check server-side cooldown (0.1 seconds = 100ms)
+        const now = Date.now();
+        if (now - p.lastEnderpearlThrow < 100) {
+            socket.emit('notification', 'Enderpearl cooldown!');
+            return;
+        }
+        
+        // Reduce count
         slot.count--;
         if (slot.count === 0) {
             p.inventory[p.selected] = null;
         }
         
+        p.lastEnderpearlThrow = now;
+        
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
         
-        // Calculate eye position
-        const eyeHeight = p.crouch ? 1.3 : 1.6;
-        const eyeX = p.pos.x;
-        const eyeY = p.pos.y - eyeHeight;
-        const eyeZ = p.pos.z;
-        
-        // Calculate throw direction from player's rotation
-        const yaw = p.rot.yaw;
-        const pitch = p.rot.pitch;
-        
-        // Minecraft-style throw velocity
-        const throwPower = 1.5;
-        const vx = -Math.sin(yaw) * Math.cos(pitch) * throwPower;
-        const vy = -Math.sin(pitch) * throwPower;
-        const vz = -Math.cos(yaw) * Math.cos(pitch) * throwPower;
-        
-        // Start position slightly in front of player's face
-        const offset = 0.5;
-        const startX = eyeX + vx * offset;
-        const startY = eyeY + vy * offset;
-        const startZ = eyeZ + vz * offset;
-        
+        // Create simple enderpearl projectile
         const pearlId = `pearl-${socket.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Start from player's eye position
+        const startPos = {
+            x: p.pos.x,
+            y: p.pos.y + (p.crouch ? 1.3 : 1.6),
+            z: p.pos.z
+        };
+        
+        // Calculate travel time based on distance (8 blocks per second)
+        const distance = Math.sqrt(
+            Math.pow(targetPos.x - startPos.x, 2) +
+            Math.pow(targetPos.y - startPos.y, 2) +
+            Math.pow(targetPos.z - startPos.z, 2)
+        );
+        
+        const travelTime = (distance / 8) * 1000; // Convert to milliseconds
+        const duration = Math.min(travelTime, 1000); // Max 1 second travel time
+        
         const pearl = {
             id: pearlId,
             owner: socket.id,
-            x: startX,
-            y: startY,
-            z: startZ,
-            vx: vx,
-            vy: vy,
-            vz: vz,
-            gravity: 0.03,
-            drag: 0.99,
-            lastUpdate: Date.now(),
-            createdAt: Date.now(),
-            landed: false,
-            lastBroadcast: Date.now()
+            startPos: startPos,
+            targetPos: targetPos,
+            createdAt: now,
+            startTime: now,
+            duration: duration,
+            arrived: false
         };
         
         enderpearls.set(pearlId, pearl);
         
-        // Emit to all clients
+        console.log(`Enderpearl thrown by ${socket.id}, ID: ${pearlId}, Travel time: ${duration}ms`);
+        
+        // Send initial pearl position to all clients
         io.emit('addEnderpearl', {
             id: pearl.id,
-            x: pearl.x,
-            y: pearl.y,
-            z: pearl.z,
-            vx: pearl.vx,
-            vy: pearl.vy,
-            vz: pearl.vz
+            x: startPos.x,
+            y: startPos.y,
+            z: startPos.z,
+            targetPos: targetPos,
+            duration: duration
         });
-        
-        socket.emit('notification', 'Enderpearl thrown!');
     });
 
     socket.on('disconnect', () => {
@@ -889,26 +885,53 @@ io.on('connection', (socket) => {
         
         const p = players.get(socket.id);
         if (p) {
-            // Remove player's bed if they have one
-            if (p.bedPos) {
-                removeBlock(p.bedPos.x, p.bedPos.y, p.bedPos.z);
-                
-                // Find and free the occupied island
-                for (let i = 0; i < ironIslands.length; i++) {
-                    if (ironIslands[i].bedX === p.bedPos.x && 
-                        ironIslands[i].bedY === p.bedPos.y && 
-                        ironIslands[i].bedZ === p.bedPos.z) {
-                        const index = occupiedIronIslands.indexOf(i);
-                        if (index > -1) {
-                            occupiedIronIslands.splice(index, 1);
+            // If player was in a match and not a spectator
+            if (gameActive && !p.spectator) {
+                // Remove player's bed if they have one
+                if (p.bedPos) {
+                    removeBlock(p.bedPos.x, p.bedPos.y, p.bedPos.z);
+                    
+                    // Find and free the occupied island
+                    for (let i = 0; i < ironIslands.length; i++) {
+                        if (ironIslands[i].bedX === p.bedPos.x && 
+                            ironIslands[i].bedY === p.bedPos.y && 
+                            ironIslands[i].bedZ === p.bedPos.z) {
+                            const index = occupiedIronIslands.indexOf(i);
+                            if (index > -1) {
+                                occupiedIronIslands.splice(index, 1);
+                            }
+                            break;
                         }
-                        break;
                     }
                 }
+                
+                // IMPORTANT: Broadcast removal of player body
+                io.emit('removePlayer', socket.id);
+                
+                players.delete(socket.id);
+                
+                // Check if game should end due to lack of players (1 or less)
+                const activePlayers = getActivePlayers();
+                console.log(`Active players after disconnect: ${activePlayers.length}`);
+                
+                if (activePlayers.length <= 1) {
+                    gameActive = false;
+                    let winnerId = null;
+                    if (activePlayers.length === 1) {
+                        winnerId = activePlayers[0].id;
+                        console.log(`Game over! Winner: ${winnerId}`);
+                    } else {
+                        console.log('Game over! No winner.');
+                    }
+                    io.emit('gameEnd', { winner: winnerId });
+                    stopRoundTimer();
+                    setTimeout(resetGame, 5000);
+                }
+            } else {
+                // If not in a match or spectator, just remove the player
+                players.delete(socket.id);
+                io.emit('removePlayer', socket.id);
             }
-            
-            players.delete(socket.id);
-            io.emit('removePlayer', socket.id);
             
             updateWaitingMessages();
             
@@ -918,24 +941,9 @@ io.on('connection', (socket) => {
                 if (activePlayers.length < REQUIRED_PLAYERS) {
                     clearInterval(countdownTimer);
                     countdownTimer = null;
-                    isCountdownActive = false;
                     io.emit('notification', 'Player left. Countdown cancelled.');
                     occupiedIronIslands = [];
                     initWorld();
-                }
-            } else if (gameActive) {
-                // Check if game should end due to lack of players
-                const activePlayers = getActivePlayers();
-                if (activePlayers.length <= 1) {
-                    gameActive = false;
-                    if (activePlayers.length === 1) {
-                        const winnerId = Array.from(players.entries()).find(([id, p]) => !p.spectator)[0];
-                        io.emit('gameEnd', { winner: winnerId });
-                    } else {
-                        io.emit('gameEnd', { winner: null });
-                    }
-                    stopRoundTimer();
-                    setTimeout(resetGame, 5000);
                 }
             }
         }
@@ -965,61 +973,42 @@ setInterval(() => {
             suddenDeath = true;
         }
 
-        // Update enderpearls with Minecraft physics
+        // SIMPLE Enderpearl updates
         const pearlUpdates = [];
         enderpearls.forEach((pearl, id) => {
-            if (pearl.landed) return;
+            if (pearl.arrived) return;
             
-            const deltaTime = (now - pearl.lastUpdate) / 1000;
-            if (deltaTime <= 0) {
-                pearl.lastUpdate = now;
-                return;
-            }
+            const elapsedTime = now - pearl.startTime;
             
-            // Apply gravity
-            pearl.vy -= pearl.gravity * deltaTime * 20;
-            
-            // Apply air resistance
-            pearl.vx *= Math.pow(pearl.drag, deltaTime);
-            pearl.vz *= Math.pow(pearl.drag, deltaTime);
-            
-            // Update position
-            pearl.x += pearl.vx * deltaTime * 20;
-            pearl.y += pearl.vy * deltaTime * 20;
-            pearl.z += pearl.vz * deltaTime * 20;
-            
-            pearl.lastUpdate = now;
-            
-            // Check for collision with blocks or ground
-            const checkX = Math.floor(pearl.x);
-            const checkY = Math.floor(pearl.y);
-            const checkZ = Math.floor(pearl.z);
-            
-            if (pearl.y <= 0.1 || blocks.has(blockKey(checkX, checkY, checkZ))) {
-                pearl.landed = true;
+            if (elapsedTime >= pearl.duration) {
+                // Pearl has arrived at destination
+                pearl.arrived = true;
                 
-                // Teleport player with 5 damage (2.5 hearts) - Minecraft exact damage
+                // Teleport player (NO DAMAGE)
                 const player = players.get(pearl.owner);
                 if (player && !player.spectator) {
-                    // Apply 5 damage (2.5 hearts)
-                    player.health = Math.max(0, player.health - 5);
+                    // Find safe position (not inside blocks)
+                    let teleportX = pearl.targetPos.x;
+                    let teleportY = pearl.targetPos.y;
+                    let teleportZ = pearl.targetPos.z;
                     
-                    // Find safe teleport position (ensure not inside blocks)
-                    let safeY = pearl.y + 0.5; // Start half a block above landing
-                    for (let yOffset = 0; yOffset < 3; yOffset++) {
-                        const testY = Math.floor(safeY + yOffset);
-                        if (!blocks.has(blockKey(Math.floor(pearl.x), testY, Math.floor(pearl.z)))) {
-                            safeY = safeY + yOffset;
-                            break;
-                        }
+                    // Adjust Y position to be on ground
+                    teleportY = Math.max(teleportY, 0.5);
+                    
+                    // Check for blocks at that position
+                    const checkX = Math.floor(teleportX);
+                    const checkY = Math.floor(teleportY);
+                    const checkZ = Math.floor(teleportZ);
+                    
+                    if (blocks.has(blockKey(checkX, checkY, checkZ))) {
+                        // If there's a block at that position, move up
+                        teleportY = checkY + 1.5;
                     }
                     
-                    // Ensure player doesn't teleport into void
-                    safeY = Math.max(safeY, 1.1);
-                    
-                    player.pos.x = pearl.x;
-                    player.pos.y = safeY;
-                    player.pos.z = pearl.z;
+                    // Update player position
+                    player.pos.x = teleportX;
+                    player.pos.y = teleportY;
+                    player.pos.z = teleportZ;
                     
                     io.to(pearl.owner).emit('teleport', {
                         x: player.pos.x,
@@ -1027,63 +1016,32 @@ setInterval(() => {
                         z: player.pos.z
                     });
                     
-                    // Update health for all clients
-                    io.emit('playerHit', {
-                        attackerId: null,
-                        targetId: pearl.owner,
-                        newHealth: player.health
-                    });
-                    
-                    // Check if player died from enderpearl damage
-                    if (player.health <= 0) {
-                        const bedKey = player.bedPos ? blockKey(player.bedPos.x, player.bedPos.y, player.bedPos.z) : null;
-                        const hasBed = player.bedPos && blocks.get(bedKey) === 'Bed';
-                        
-                        if (hasBed) {
-                            player.health = PLAYER_MAX_HEALTH;
-                            player.pos.x = player.bedPos.x + 0.5;
-                            player.pos.y = player.bedPos.y + 2;
-                            player.pos.z = player.bedPos.z + 0.5;
-                            player.rot.yaw = 0;
-                            player.rot.pitch = 0;
-                            
-                            io.to(pearl.owner).emit('respawn', { 
-                                pos: player.pos, 
-                                rot: player.rot 
-                            });
-                            
-                            io.to(pearl.owner).emit('notification', 'You died by enderpearl and respawned at your bed!');
-                        } else {
-                            // Player eliminated by enderpearl
-                            eliminatePlayer(pearl.owner, null);
-                        }
-                    } else {
-                        io.to(pearl.owner).emit('notification', `Teleported! Took 5 damage (2.5 hearts).`);
-                    }
+                    io.to(pearl.owner).emit('notification', 'Ender pearl teleport!');
                 }
                 
-                // Remove enderpearl after teleportation
+                // Remove ender pearl after a short delay
                 setTimeout(() => {
-                    enderpearls.delete(id);
-                    io.emit('removeEnderpearl', id);
+                    if (enderpearls.has(id)) {
+                        enderpearls.delete(id);
+                        io.emit('removeEnderpearl', id);
+                        console.log(`Enderpearl ${id} removed (arrived)`);
+                    }
                 }, 100);
-            } else if (now - pearl.createdAt > 30000) { // 30 second timeout
-                enderpearls.delete(id);
-                io.emit('removeEnderpearl', id);
             } else {
-                // Send frequent updates for smooth interpolation
-                if (now - pearl.lastBroadcast > 50) {
-                    pearlUpdates.push({
-                        id: pearl.id,
-                        x: pearl.x,
-                        y: pearl.y,
-                        z: pearl.z,
-                        vx: pearl.vx,
-                        vy: pearl.vy,
-                        vz: pearl.vz
-                    });
-                    pearl.lastBroadcast = now;
-                }
+                // Calculate current position (linear interpolation)
+                const progress = elapsedTime / pearl.duration;
+                const currentPos = {
+                    x: pearl.startPos.x + (pearl.targetPos.x - pearl.startPos.x) * progress,
+                    y: pearl.startPos.y + (pearl.targetPos.y - pearl.startPos.y) * progress,
+                    z: pearl.startPos.z + (pearl.targetPos.z - pearl.startPos.z) * progress
+                };
+                
+                pearlUpdates.push({
+                    id: pearl.id,
+                    x: currentPos.x,
+                    y: currentPos.y,
+                    z: currentPos.z
+                });
             }
         });
         
