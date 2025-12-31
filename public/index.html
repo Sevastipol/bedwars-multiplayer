@@ -431,7 +431,6 @@
         let wasBuying = false;
         let lastEnderpearlThrow = 0;
         let lastFireballThrow = 0;
-        let isShopOpen = false; // Add this flag
 
         // --- Config ---
         const BLOCK_TYPES = {
@@ -496,7 +495,7 @@
             document.getElementById('fullscreen-overlay').style.display = 'none';
             
             setTimeout(() => {
-                if (!controls.isLocked && !isShopOpen) {
+                if (!controls.isLocked && !isShopOpen()) {
                     controls.lock();
                 }
             }, 500);
@@ -586,9 +585,9 @@
                     swordInHand = null;
                 }
                 
-                if (isFullscreen() && !controls.isLocked && !isShopOpen) {
+                if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
                     setTimeout(() => {
-                        if (!controls.isLocked && !isShopOpen) {
+                        if (!controls.isLocked && !isShopOpen()) {
                             controls.lock();
                         }
                     }, 100);
@@ -606,9 +605,9 @@
                 // Update sword in hand
                 updateSwordInHand();
                 
-                if (isFullscreen() && !controls.isLocked && !isShopOpen) {
+                if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
                     setTimeout(() => {
-                        if (!controls.isLocked && !isShopOpen) {
+                        if (!controls.isLocked && !isShopOpen()) {
                             controls.lock();
                         }
                     }, 100);
@@ -898,13 +897,13 @@
                 material = new THREE.SpriteMaterial({ 
                     map: fireballTexture,
                     transparent: true,
-                    opacity: 0.9,
-                    color: 0xff5500
+                    opacity: 0.9
+                    // Removed color override to use texture color
                 });
             } else {
-                // Fallback to colored sprite
+                // Fallback to original fireball color
                 material = new THREE.SpriteMaterial({ 
-                    color: 0xff5500,
+                    color: 0xff5500, // Original fireball color
                     transparent: true,
                     opacity: 0.9
                 });
@@ -1236,6 +1235,10 @@
         const moveState = { fwd: false, bwd: false, l: false, r: false };
         let onGround = false;
 
+        function isShopOpen() {
+            return document.getElementById('shop').style.display === 'block';
+        }
+
         // Block breaking cancellation
         function isStillLookingAtBlock() {
             if (!isBreaking || !breakingBlock) return false;
@@ -1275,7 +1278,7 @@
             }
 
             if(e.code === 'KeyB') toggleShop();
-            if(isShopOpen) return;
+            if(document.getElementById('shop').style.display === 'block') return;
 
             if (e.code.startsWith('Digit') && e.code !== 'Digit0') {
                 const num = parseInt(e.key);
@@ -1347,14 +1350,14 @@
             }
             
             if (isSpectator) {
-                if (!controls.isLocked && !isShopOpen) {
+                if (!controls.isLocked && !isShopOpen()) {
                     controls.lock();
                 }
                 return;
             }
             
             if (!controls.isLocked) {
-                if(!isShopOpen) controls.lock();
+                if(!isShopOpen()) controls.lock();
                 return;
             }
 
@@ -1457,9 +1460,9 @@
                 
                 // Check if we have a fireball selected
                 else if (currentSlot && currentSlot.type === 'Fireball' && currentSlot.count > 0) {
-                    // Check client-side cooldown (2 seconds = 2000ms)
+                    // Check client-side cooldown (0.1 seconds = 100ms)
                     const now = Date.now();
-                    if (now - lastFireballThrow < 2000) {
+                    if (now - lastFireballThrow < 100) {
                         socket.emit('notification', 'Fireball cooldown!');
                         return;
                     }
@@ -1751,74 +1754,21 @@
                 swordInHand.rotation.z = Math.PI / 6;
             }
 
-            // Apply gravity and physics even when shop is open or controls are unlocked
-            if (!isSpectator && !controls.isLocked && !isShopOpen) {
-                // Still apply gravity when not locked
+            // Always apply physics for non-spectator players, even when controls aren't locked
+            if (!isSpectator) {
+                // Always apply gravity
                 velocity.y -= 20.0 * delta;
-                camera.position.y += velocity.y * delta;
-                onGround = false;
-                
-                // Check for ground collision
-                const currentEyeHeightForFoot = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
-                const footBox = new THREE.Box3().setFromCenterAndSize(
-                    new THREE.Vector3(camera.position.x, camera.position.y - currentEyeHeightForFoot, camera.position.z),
-                    new THREE.Vector3(PLAYER_RADIUS, 0.2, PLAYER_RADIUS)
-                );
 
-                for (const b of blocksInScene) {
-                    const bBox = new THREE.Box3().setFromObject(b);
-                    if (footBox.intersectsBox(bBox)) {
-                        if (velocity.y < 0) {
-                            velocity.y = 0;
-                            camera.position.y = bBox.max.y + currentEyeHeightForFoot;
-                            onGround = true;
-                        }
-                    }
-                }
+                const direction = new THREE.Vector3();
+                direction.z = Number(moveState.fwd) - Number(moveState.bwd);
+                direction.x = Number(moveState.r) - Number(moveState.l);
+                direction.normalize();
 
-                // Check for falling into void
-                if (camera.position.y < -30 && isInRound) {
-                    // Death handled server-side
-                }
-            }
+                const baseSpeed = 5.0;
+                const speed = isCrouching ? baseSpeed * 0.6 : baseSpeed;
 
-            if (controls.isLocked) {
-                if (isSpectator) {
-                    const direction = new THREE.Vector3();
-                    direction.z = Number(moveState.fwd) - Number(moveState.bwd);
-                    direction.x = Number(moveState.r) - Number(moveState.l);
-                    direction.normalize();
-                    
-                    const speed = 10.0;
-                    
-                    if (direction.x !== 0) {
-                        const moveDir = new THREE.Vector3(1, 0, 0);
-                        moveDir.applyQuaternion(camera.quaternion);
-                        moveDir.normalize();
-                        controls.moveRight(direction.x * speed * delta);
-                    }
-
-                    if (direction.z !== 0) {
-                        const moveDir = new THREE.Vector3(0, 0, -1);
-                        moveDir.applyQuaternion(camera.quaternion);
-                        moveDir.normalize();
-                        controls.moveForward(direction.z * speed * delta);
-                    }
-                    
-                    camera.position.y += velocity.y * delta;
-                    velocity.y = 0;
-                    onGround = true;
-                } else {
-                    velocity.y -= 20.0 * delta;
-
-                    const direction = new THREE.Vector3();
-                    direction.z = Number(moveState.fwd) - Number(moveState.bwd);
-                    direction.x = Number(moveState.r) - Number(moveState.l);
-                    direction.normalize();
-
-                    const baseSpeed = 5.0;
-                    const speed = isCrouching ? baseSpeed * 0.6 : baseSpeed;
-
+                // Only process movement if controls are locked
+                if (controls.isLocked) {
                     if (direction.x !== 0) {
                         const moveDir = new THREE.Vector3(1, 0, 0);
                         moveDir.applyQuaternion(camera.quaternion);
@@ -1840,34 +1790,62 @@
                             if (checkCollision(camera.position)) controls.moveForward(-direction.z * speed * delta);
                         }
                     }
+                }
+                
+                // Apply velocity (gravity)
+                camera.position.y += velocity.y * delta;
+                onGround = false;
 
-                    camera.position.y += velocity.y * delta;
-                    onGround = false;
+                const currentEyeHeightForFoot = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
+                const footBox = new THREE.Box3().setFromCenterAndSize(
+                    new THREE.Vector3(camera.position.x, camera.position.y - currentEyeHeightForFoot, camera.position.z),
+                    new THREE.Vector3(PLAYER_RADIUS, 0.2, PLAYER_RADIUS)
+                );
 
-                    const currentEyeHeightForFoot = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
-                    const footBox = new THREE.Box3().setFromCenterAndSize(
-                        new THREE.Vector3(camera.position.x, camera.position.y - currentEyeHeightForFoot, camera.position.z),
-                        new THREE.Vector3(PLAYER_RADIUS, 0.2, PLAYER_RADIUS)
-                    );
-
-                    for (const b of blocksInScene) {
-                        const bBox = new THREE.Box3().setFromObject(b);
-                        if (footBox.intersectsBox(bBox)) {
-                            if (velocity.y < 0) {
-                                velocity.y = 0;
-                                camera.position.y = bBox.max.y + currentEyeHeightForFoot;
-                                onGround = true;
-                            }
+                for (const b of blocksInScene) {
+                    const bBox = new THREE.Box3().setFromObject(b);
+                    if (footBox.intersectsBox(bBox)) {
+                        if (velocity.y < 0) {
+                            velocity.y = 0;
+                            camera.position.y = bBox.max.y + currentEyeHeightForFoot;
+                            onGround = true;
                         }
                     }
-
-                    if (camera.position.y < -30 && isInRound) {
-                        // Death handled server-side
-                    }
                 }
+
+                if (camera.position.y < -30 && isInRound) {
+                    // Death handled server-side
+                }
+            } else if (controls.isLocked) {
+                // spectator movement
+                const direction = new THREE.Vector3();
+                direction.z = Number(moveState.fwd) - Number(moveState.bwd);
+                direction.x = Number(moveState.r) - Number(moveState.l);
+                direction.normalize();
+                
+                const speed = 10.0;
+                
+                if (direction.x !== 0) {
+                    const moveDir = new THREE.Vector3(1, 0, 0);
+                    moveDir.applyQuaternion(camera.quaternion);
+                    moveDir.normalize();
+                    controls.moveRight(direction.x * speed * delta);
+                }
+
+                if (direction.z !== 0) {
+                    const moveDir = new THREE.Vector3(0, 0, -1);
+                    moveDir.applyQuaternion(camera.quaternion);
+                    moveDir.normalize();
+                    controls.moveForward(direction.z * speed * delta);
+                }
+                
+                camera.position.y += velocity.y * delta;
+                velocity.y = 0;
+                onGround = true;
             }
 
-            if (controls.isLocked && socket.connected && time - lastPlayerUpdate > 50) {
+            // Send player updates even when shop is open or controls aren't locked
+            if (!isSpectator && socket.connected && time - lastPlayerUpdate > 50) {
                 const currentSlot = inventory[selectedSlotIndex];
                 const equippedWeapon = currentSlot && currentSlot.type && BLOCK_TYPES[currentSlot.type] && BLOCK_TYPES[currentSlot.type].isWeapon ? currentSlot.type : null;
                 
@@ -2071,16 +2049,13 @@
             if (isSpectator) return;
             
             const shop = document.getElementById('shop');
+            const isVisible = shop.style.display === 'block';
             
-            if (isShopOpen) {
+            if (isVisible) {
                 shop.style.display = 'none';
-                isShopOpen = false;
-                if (isFullscreen() && !isSpectator) {
-                    controls.lock();
-                }
+                controls.lock();
             } else {
                 shop.style.display = 'block';
-                isShopOpen = true;
                 controls.unlock();
                 renderShop();
             }
@@ -2138,7 +2113,7 @@
             canvas.height = 64;
             const ctx = canvas.getContext('2d');
             ctx.fillStyle = 'rgba(0,0,0,0.7)';
-            ctx.fillRect(0, 0, 256, 64);
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.fillStyle = 'white';
             ctx.font = 'bold 24px Arial';
             ctx.textAlign = 'center';
