@@ -41,6 +41,8 @@ const spawners = [];
 const players = new Map();
 const enderpearls = new Map();
 const fireballs = new Map();
+const breakingAnimations = new Map(); // NEW: Track breaking animations per player
+
 let gameActive = false;
 let countdownTimer = null;
 let roundStartTime = null;
@@ -108,76 +110,6 @@ function spawnPickup(x, y, z, resourceType) {
     pickups.set(id, { x, y, z, resourceType });
     io.emit('addPickup', { id, x, y, z, resourceType });
 }
-// Add to your server code after line 1 (the imports section):
-
-// Breaking animation tracking
-const breakingAnimations = new Map(); // playerId -> { x, y, z, startTime, breakTime }
-
-// Then add these socket event handlers in your io.on('connection') section:
-
-// Breaking animation synchronization
-socket.on('startBreaking', ({ x, y, z, breakTime }) => {
-    breakingAnimations.set(socket.id, {
-        x, y, z,
-        startTime: Date.now(),
-        breakTime: breakTime,
-        playerId: socket.id
-    });
-    
-    // Broadcast to other players
-    socket.broadcast.emit('startBreaking', {
-        x, y, z,
-        playerId: socket.id,
-        breakTime: breakTime
-    });
-});
-
-socket.on('breakingProgress', ({ x, y, z, progress }) => {
-    // Update breaking animation
-    if (breakingAnimations.has(socket.id)) {
-        const anim = breakingAnimations.get(socket.id);
-        anim.x = x;
-        anim.y = y;
-        anim.z = z;
-        anim.progress = progress;
-        
-        // Broadcast to other players
-        socket.broadcast.emit('breakingProgress', {
-            x, y, z,
-            playerId: socket.id,
-            progress: progress
-        });
-    }
-});
-
-socket.on('stopBreaking', ({ x, y, z }) => {
-    if (breakingAnimations.has(socket.id)) {
-        breakingAnimations.delete(socket.id);
-        
-        // Broadcast to other players
-        socket.broadcast.emit('stopBreaking', {
-            x, y, z,
-            playerId: socket.id
-        });
-    }
-});
-
-// Also add cleanup for when a player disconnects:
-socket.on('disconnect', () => {
-    // ... existing disconnect code ...
-    
-    // Clean up breaking animations
-    if (breakingAnimations.has(socket.id)) {
-        const anim = breakingAnimations.get(socket.id);
-        socket.broadcast.emit('stopBreaking', {
-            x: anim.x,
-            y: anim.y,
-            z: anim.z,
-            playerId: socket.id
-        });
-        breakingAnimations.delete(socket.id);
-    }
-});
 
 function addToInventory(inv, type, amount) {
     let remaining = amount;
@@ -285,6 +217,7 @@ function initWorld() {
     spawners.length = 0;
     enderpearls.clear();
     fireballs.clear();
+    breakingAnimations.clear(); // NEW: Clear breaking animations
     
     // Create iron islands
     ironIslands.forEach(island => {
@@ -1071,6 +1004,62 @@ io.on('connection', (socket) => {
         });
     });
 
+    // NEW: Breaking animation synchronization
+    socket.on('startBreaking', ({ x, y, z, breakTime }) => {
+        const p = players.get(socket.id);
+        if (p.spectator) return;
+        
+        // Store breaking animation
+        breakingAnimations.set(socket.id, {
+            x, y, z,
+            progress: 0,
+            lastUpdate: Date.now(),
+            breakTime
+        });
+        
+        // Broadcast to other players (except the sender)
+        socket.broadcast.emit('startBreaking', {
+            x, y, z,
+            playerId: socket.id,
+            breakTime
+        });
+    });
+
+    socket.on('breakingProgress', ({ x, y, z, progress }) => {
+        const p = players.get(socket.id);
+        if (p.spectator) return;
+        
+        // Update breaking animation
+        if (breakingAnimations.has(socket.id)) {
+            const anim = breakingAnimations.get(socket.id);
+            anim.x = x;
+            anim.y = y;
+            anim.z = z;
+            anim.progress = progress;
+            anim.lastUpdate = Date.now();
+            
+            // Broadcast to other players (except the sender)
+            socket.broadcast.emit('breakingProgress', {
+                x, y, z,
+                playerId: socket.id,
+                progress
+            });
+        }
+    });
+
+    socket.on('stopBreaking', ({ x, y, z }) => {
+        // Remove breaking animation
+        if (breakingAnimations.has(socket.id)) {
+            breakingAnimations.delete(socket.id);
+            
+            // Broadcast to other players (except the sender)
+            socket.broadcast.emit('stopBreaking', {
+                x, y, z,
+                playerId: socket.id
+            });
+        }
+    });
+
     socket.on('disconnect', () => {
         console.log(`Disconnected: ${socket.id}`);
         
@@ -1112,6 +1101,18 @@ io.on('connection', (socket) => {
                 // If not in a match or spectator, just remove the player
                 players.delete(socket.id);
                 io.emit('removePlayer', socket.id);
+            }
+            
+            // NEW: Clean up breaking animations
+            if (breakingAnimations.has(socket.id)) {
+                const anim = breakingAnimations.get(socket.id);
+                socket.broadcast.emit('stopBreaking', {
+                    x: anim.x,
+                    y: anim.y,
+                    z: anim.z,
+                    playerId: socket.id
+                });
+                breakingAnimations.delete(socket.id);
             }
             
             updateWaitingMessages();
@@ -1346,6 +1347,27 @@ setInterval(() => {
         fireballRemovals.forEach(id => {
             fireballs.delete(id);
             io.emit('removeFireball', id);
+        });
+
+        // NEW: Clean up old breaking animations (if player stops without sending stop event)
+        const breakingAnimationsToRemove = [];
+        breakingAnimations.forEach((anim, playerId) => {
+            if (now - anim.lastUpdate > 5000) { // 5 seconds without update
+                breakingAnimationsToRemove.push(playerId);
+            }
+        });
+        
+        breakingAnimationsToRemove.forEach(playerId => {
+            const anim = breakingAnimations.get(playerId);
+            if (anim) {
+                io.emit('stopBreaking', {
+                    x: anim.x,
+                    y: anim.y,
+                    z: anim.z,
+                    playerId: playerId
+                });
+                breakingAnimations.delete(playerId);
+            }
         });
 
         // Check for death/respawn (for falling into void)
