@@ -806,7 +806,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // SIMPLE Enderpearl throwing - NEW VERSION
+    // Enderpearl throwing - UPDATED VERSION
     socket.on('throwEnderpearl', (targetPos) => {
         const p = players.get(socket.id);
         if (p.spectator) return;
@@ -817,9 +817,9 @@ io.on('connection', (socket) => {
             return;
         }
         
-        // Check server-side cooldown (0.1 seconds = 100ms)
+        // Check server-side cooldown (1 second = 1000ms)
         const now = Date.now();
-        if (now - p.lastEnderpearlThrow < 100) {
+        if (now - p.lastEnderpearlThrow < 1000) {
             socket.emit('notification', 'Enderpearl cooldown!');
             return;
         }
@@ -834,8 +834,8 @@ io.on('connection', (socket) => {
         
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
         
-        // Create simple enderpearl projectile
-        const pearlId = `pearl-${socket.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        // Create enderpearl projectile with velocity-based movement
+        const pearlId = `pearl-${socket.id}-${now}-${Math.random().toString(36).substr(2, 9)}`;
         
         // Start from player's eye position
         const startPos = {
@@ -844,39 +844,45 @@ io.on('connection', (socket) => {
             z: p.pos.z
         };
         
-        // Calculate travel time based on distance (8 blocks per second)
-        const distance = Math.sqrt(
-            Math.pow(targetPos.x - startPos.x, 2) +
-            Math.pow(targetPos.y - startPos.y, 2) +
-            Math.pow(targetPos.z - startPos.z, 2)
-        );
+        // Get throw direction from targetPos (which should be where player is looking)
+        const direction = {
+            x: targetPos.x - startPos.x,
+            y: targetPos.y - startPos.y,
+            z: targetPos.z - startPos.z
+        };
         
-        const travelTime = (distance / 8) * 1000; // Convert to milliseconds
-        const duration = Math.min(travelTime, 1000); // Max 1 second travel time
+        // Normalize and set velocity (speed: 15 blocks per second)
+        const length = Math.sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
+        const speed = 15;
+        const velocity = {
+            x: (direction.x / length) * speed,
+            y: (direction.y / length) * speed,
+            z: (direction.z / length) * speed
+        };
         
         const pearl = {
             id: pearlId,
             owner: socket.id,
-            startPos: startPos,
-            targetPos: targetPos,
+            pos: startPos,
+            velocity: velocity,
             createdAt: now,
-            startTime: now,
-            duration: duration,
-            arrived: false
+            lastUpdate: now,
+            arrived: false,
+            hit: false
         };
         
         enderpearls.set(pearlId, pearl);
         
-        console.log(`Enderpearl thrown by ${socket.id}, ID: ${pearlId}, Travel time: ${duration}ms`);
+        console.log(`Enderpearl thrown by ${socket.id}, ID: ${pearlId}, Velocity:`, velocity);
         
-        // Send initial pearl position to all clients
+        // Send pearl to all clients
         io.emit('addEnderpearl', {
             id: pearl.id,
             x: startPos.x,
             y: startPos.y,
             z: startPos.z,
-            targetPos: targetPos,
-            duration: duration
+            velocity: velocity,
+            owner: socket.id
         });
     });
 
@@ -973,42 +979,61 @@ setInterval(() => {
             suddenDeath = true;
         }
 
-        // SIMPLE Enderpearl updates
+        // Enderpearl physics
         const pearlUpdates = [];
+        const pearlRemovals = [];
+        
         enderpearls.forEach((pearl, id) => {
-            if (pearl.arrived) return;
+            if (pearl.arrived || pearl.hit) return;
             
-            const elapsedTime = now - pearl.startTime;
+            const deltaTime = (now - pearl.lastUpdate) / 1000; // in seconds
+            pearl.lastUpdate = now;
             
-            if (elapsedTime >= pearl.duration) {
-                // Pearl has arrived at destination
-                pearl.arrived = true;
+            // Apply gravity
+            const GRAVITY = 20; // blocks per second squared
+            pearl.velocity.y -= GRAVITY * deltaTime;
+            
+            // Update position
+            pearl.pos.x += pearl.velocity.x * deltaTime;
+            pearl.pos.y += pearl.velocity.y * deltaTime;
+            pearl.pos.z += pearl.velocity.z * deltaTime;
+            
+            // Check if hit a block
+            const blockX = Math.floor(pearl.pos.x);
+            const blockY = Math.floor(pearl.pos.y);
+            const blockZ = Math.floor(pearl.pos.z);
+            const blockKeyStr = blockKey(blockX, blockY, blockZ);
+            
+            if (blocks.has(blockKeyStr) && now - pearl.createdAt > 200) {
+                // Hit a block - teleport player
+                pearl.hit = true;
                 
                 // Teleport player (NO DAMAGE)
                 const player = players.get(pearl.owner);
                 if (player && !player.spectator) {
-                    // Find safe position (not inside blocks)
-                    let teleportX = pearl.targetPos.x;
-                    let teleportY = pearl.targetPos.y;
-                    let teleportZ = pearl.targetPos.z;
+                    // Find safe position (just before the hit) and teleport up 1 block
+                    const safePos = {
+                        x: pearl.pos.x - pearl.velocity.x * deltaTime,
+                        y: pearl.pos.y - pearl.velocity.y * deltaTime + 1.0, // Teleport up 1 block
+                        z: pearl.pos.z - pearl.velocity.z * deltaTime
+                    };
                     
-                    // Adjust Y position to be on ground
-                    teleportY = Math.max(teleportY, 0.5);
+                    // Ensure we're not inside a block
+                    let teleportY = safePos.y;
+                    const checkX = Math.floor(safePos.x);
+                    const checkZ = Math.floor(safePos.z);
                     
-                    // Check for blocks at that position
-                    const checkX = Math.floor(teleportX);
-                    const checkY = Math.floor(teleportY);
-                    const checkZ = Math.floor(teleportZ);
-                    
-                    if (blocks.has(blockKey(checkX, checkY, checkZ))) {
-                        // If there's a block at that position, move up
-                        teleportY = checkY + 1.5;
+                    // Check blocks at the teleport position
+                    for (let y = Math.floor(teleportY); y < Math.floor(teleportY) + 3; y++) {
+                        if (blocks.has(blockKey(checkX, y, checkZ))) {
+                            teleportY = y + 1.5; // Move above the block
+                        }
                     }
                     
                     // Update player position
-                    player.pos.x = teleportX;
+                    player.pos.x = safePos.x;
                     player.pos.y = teleportY;
-                    player.pos.z = teleportZ;
+                    player.pos.z = safePos.z;
                     
                     io.to(pearl.owner).emit('teleport', {
                         x: player.pos.x,
@@ -1019,35 +1044,35 @@ setInterval(() => {
                     io.to(pearl.owner).emit('notification', 'Ender pearl teleport!');
                 }
                 
-                // Remove ender pearl after a short delay
-                setTimeout(() => {
-                    if (enderpearls.has(id)) {
-                        enderpearls.delete(id);
-                        io.emit('removeEnderpearl', id);
-                        console.log(`Enderpearl ${id} removed (arrived)`);
-                    }
-                }, 100);
+                // Mark for removal
+                pearl.arrived = true;
+                pearlRemovals.push(id);
+            } else if (pearl.pos.y < -30 || now - pearl.createdAt > 10000) {
+                // Fell into void or timeout (10 seconds)
+                pearl.arrived = true;
+                pearlRemovals.push(id);
             } else {
-                // Calculate current position (linear interpolation)
-                const progress = elapsedTime / pearl.duration;
-                const currentPos = {
-                    x: pearl.startPos.x + (pearl.targetPos.x - pearl.startPos.x) * progress,
-                    y: pearl.startPos.y + (pearl.targetPos.y - pearl.startPos.y) * progress,
-                    z: pearl.startPos.z + (pearl.targetPos.z - pearl.startPos.z) * progress
-                };
-                
+                // Still in flight
                 pearlUpdates.push({
                     id: pearl.id,
-                    x: currentPos.x,
-                    y: currentPos.y,
-                    z: currentPos.z
+                    x: pearl.pos.x,
+                    y: pearl.pos.y,
+                    z: pearl.pos.z
                 });
             }
         });
         
+        // Send updates to clients
         if (pearlUpdates.length > 0) {
             io.emit('updateEnderpearl', pearlUpdates);
         }
+        
+        // Remove pearls that have hit or timed out
+        pearlRemovals.forEach(id => {
+            enderpearls.delete(id);
+            io.emit('removeEnderpearl', id);
+            console.log(`Enderpearl ${id} removed (hit or timeout)`);
+        });
 
         // Check for death/respawn (for falling into void)
         players.forEach((p, id) => {
