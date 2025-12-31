@@ -108,6 +108,76 @@ function spawnPickup(x, y, z, resourceType) {
     pickups.set(id, { x, y, z, resourceType });
     io.emit('addPickup', { id, x, y, z, resourceType });
 }
+// Add to your server code after line 1 (the imports section):
+
+// Breaking animation tracking
+const breakingAnimations = new Map(); // playerId -> { x, y, z, startTime, breakTime }
+
+// Then add these socket event handlers in your io.on('connection') section:
+
+// Breaking animation synchronization
+socket.on('startBreaking', ({ x, y, z, breakTime }) => {
+    breakingAnimations.set(socket.id, {
+        x, y, z,
+        startTime: Date.now(),
+        breakTime: breakTime,
+        playerId: socket.id
+    });
+    
+    // Broadcast to other players
+    socket.broadcast.emit('startBreaking', {
+        x, y, z,
+        playerId: socket.id,
+        breakTime: breakTime
+    });
+});
+
+socket.on('breakingProgress', ({ x, y, z, progress }) => {
+    // Update breaking animation
+    if (breakingAnimations.has(socket.id)) {
+        const anim = breakingAnimations.get(socket.id);
+        anim.x = x;
+        anim.y = y;
+        anim.z = z;
+        anim.progress = progress;
+        
+        // Broadcast to other players
+        socket.broadcast.emit('breakingProgress', {
+            x, y, z,
+            playerId: socket.id,
+            progress: progress
+        });
+    }
+});
+
+socket.on('stopBreaking', ({ x, y, z }) => {
+    if (breakingAnimations.has(socket.id)) {
+        breakingAnimations.delete(socket.id);
+        
+        // Broadcast to other players
+        socket.broadcast.emit('stopBreaking', {
+            x, y, z,
+            playerId: socket.id
+        });
+    }
+});
+
+// Also add cleanup for when a player disconnects:
+socket.on('disconnect', () => {
+    // ... existing disconnect code ...
+    
+    // Clean up breaking animations
+    if (breakingAnimations.has(socket.id)) {
+        const anim = breakingAnimations.get(socket.id);
+        socket.broadcast.emit('stopBreaking', {
+            x: anim.x,
+            y: anim.y,
+            z: anim.z,
+            playerId: socket.id
+        });
+        breakingAnimations.delete(socket.id);
+    }
+});
 
 function addToInventory(inv, type, amount) {
     let remaining = amount;
