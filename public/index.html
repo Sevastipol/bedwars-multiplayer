@@ -896,16 +896,16 @@
             if (fireballTexture) {
                 material = new THREE.SpriteMaterial({ 
                     map: fireballTexture,
-                    transparent: true,
-                    opacity: 0.9
-                    // Removed color override to use texture color
+                    // REMOVED transparency - fireball should be opaque
+                    opacity: 1.0,
+                    transparent: false
                 });
             } else {
                 // Fallback to original fireball color
                 material = new THREE.SpriteMaterial({ 
                     color: 0xff5500, // Original fireball color
-                    transparent: true,
-                    opacity: 0.9
+                    opacity: 1.0,
+                    transparent: false
                 });
             }
             
@@ -1064,9 +1064,10 @@
             if (currentSlot && currentSlot.type && BLOCK_TYPES[currentSlot.type] && BLOCK_TYPES[currentSlot.type].isWeapon) {
                 swordInHand = createSwordMesh(currentSlot.type);
                 if (swordInHand) {
-                    // Position sword in view
+                    // Position sword in view - MADE BIGGER
                     swordInHand.position.set(-0.4, -0.3, -0.5);
-                    swordInHand.scale.set(0.6, 0.6, 1);
+                    // Increased scale from 0.6 to 1.0
+                    swordInHand.scale.set(1.0, 1.0, 1);
                     scene.add(swordInHand);
                 }
             }
@@ -1089,7 +1090,8 @@
                 if (sword) {
                     // Position in right hand
                     sword.position.set(-0.7, 0.8, 0.2);
-                    sword.scale.set(0.4, 0.4, 1);
+                    // Increased scale from 0.4 to 0.8
+                    sword.scale.set(0.8, 0.8, 1);
                     
                     op.group.add(sword);
                     playerSwords.set(playerId, sword);
@@ -1726,12 +1728,11 @@
                     fireball.material.rotation += 0.2;
                     fireball.material.needsUpdate = true;
                     
-                    // Add a pulsing effect
+                    // Add a pulsing effect (but keep opacity at 1.0)
                     const pulse = 0.15 * Math.sin(now / 150);
                     fireball.scale.set(0.8 + pulse, 0.8 + pulse, 1);
                     
-                    // Add glow effect
-                    fireball.material.opacity = 0.7 + 0.3 * Math.sin(now / 200);
+                    // Fireball is not transparent anymore, so no opacity changes
                 }
             });
 
