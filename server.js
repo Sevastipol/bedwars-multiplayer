@@ -1004,6 +1004,57 @@ io.on('connection', (socket) => {
         });
     });
 
+    // NEW: Fireball block hit detection
+    socket.on('fireballHitBlock', ({ fireballId, x, y, z }) => {
+        const fireball = fireballs.get(fireballId);
+        if (!fireball) return;
+        
+        // Destroy blocks in a 3x3x3 area centered on the hit block
+        const blocksDestroyed = [];
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                    const blockX = x + dx;
+                    const blockY = y + dy;
+                    const blockZ = z + dz;
+                    const key = blockKey(blockX, blockY, blockZ);
+                    
+                    // Check if block exists and is not a bed (protect beds from fireball)
+                    if (blocks.has(key)) {
+                        const blockType = blocks.get(key);
+                        
+                        // Don't destroy beds with fireballs
+                        if (blockType === 'Bed') {
+                            // Check if it's the player's own bed
+                            const player = players.get(fireball.owner);
+                            if (player && player.bedPos && 
+                                player.bedPos.x === blockX && 
+                                player.bedPos.y === blockY && 
+                                player.bedPos.z === blockZ) {
+                                continue; // Don't destroy own bed
+                            }
+                        }
+                        
+                        removeBlock(blockX, blockY, blockZ);
+                        blocksDestroyed.push({ x: blockX, y: blockY, z: blockZ, type: blockType });
+                    }
+                }
+            }
+        }
+        
+        // Send explosion effect and block removals to clients
+        io.emit('fireballExplosion', {
+            x: x,
+            y: y,
+            z: z,
+            blocksDestroyed: blocksDestroyed
+        });
+        
+        // Remove the fireball
+        fireballs.delete(fireballId);
+        io.emit('removeFireball', fireballId);
+    });
+
     // NEW: Breaking animation synchronization
     socket.on('startBreaking', ({ x, y, z, breakTime }) => {
         const p = players.get(socket.id);
@@ -1250,7 +1301,7 @@ setInterval(() => {
             console.log(`Enderpearl ${id} removed (hit or timeout)`);
         });
 
-        // Fireball physics - explode immediately on contact
+        // Fireball physics - WITH IMPROVED BLOCK COLLISION DETECTION
         const fireballUpdates = [];
         const fireballRemovals = [];
         
@@ -1259,6 +1310,9 @@ setInterval(() => {
             
             const deltaTime = (now - fireball.lastUpdate) / 1000; // in seconds
             fireball.lastUpdate = now;
+            
+            // Store previous position for collision detection
+            const prevPos = { ...fireball.pos };
             
             // Apply gravity (less gravity than enderpearl for more direct trajectory)
             const GRAVITY = 10;
@@ -1269,60 +1323,95 @@ setInterval(() => {
             fireball.pos.y += fireball.velocity.y * deltaTime;
             fireball.pos.z += fireball.velocity.z * deltaTime;
             
-            // Check if hit a block - explode immediately
-            const blockX = Math.floor(fireball.pos.x);
-            const blockY = Math.floor(fireball.pos.y);
-            const blockZ = Math.floor(fireball.pos.z);
-            const blockKeyStr = blockKey(blockX, blockY, blockZ);
+            // IMPROVED: Check for block collisions along the path
+            const dx = fireball.pos.x - prevPos.x;
+            const dy = fireball.pos.y - prevPos.y;
+            const dz = fireball.pos.z - prevPos.z;
+            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
             
-            if (blocks.has(blockKeyStr)) {
-                // Hit a block - destroy blocks in 3x3x3 area
-                fireball.hit = true;
+            if (distance > 0) {
+                // Check multiple points along the path to ensure we don't miss collisions
+                const steps = Math.ceil(distance * 2); // Check every 0.5 blocks
+                let hitBlock = null;
                 
-                // Destroy blocks in a 3x3x3 area centered on the hit block
-                const blocksDestroyed = [];
-                for (let dx = -1; dx <= 1; dx++) {
-                    for (let dy = -1; dy <= 1; dy++) {
-                        for (let dz = -1; dz <= 1; dz++) {
-                            const x = blockX + dx;
-                            const y = blockY + dy;
-                            const z = blockZ + dz;
-                            const key = blockKey(x, y, z);
-                            
-                            // Check if block exists and is not a bed (protect beds from fireball)
-                            if (blocks.has(key)) {
-                                const blockType = blocks.get(key);
-                                
-                                // Don't destroy beds with fireballs
-                                if (blockType === 'Bed') {
-                                    // Check if it's the player's own bed
-                                    const player = players.get(fireball.owner);
-                                    if (player && player.bedPos && 
-                                        player.bedPos.x === x && 
-                                        player.bedPos.y === y && 
-                                        player.bedPos.z === z) {
-                                        continue; // Don't destroy own bed
-                                    }
-                                }
-                                
-                                removeBlock(x, y, z);
-                                blocksDestroyed.push({ x, y, z, type: blockType });
-                            }
-                        }
+                for (let i = 0; i <= steps; i++) {
+                    const t = i / steps;
+                    const checkX = prevPos.x + dx * t;
+                    const checkY = prevPos.y + dy * t;
+                    const checkZ = prevPos.z + dz * t;
+                    
+                    const blockX = Math.floor(checkX);
+                    const blockY = Math.floor(checkY);
+                    const blockZ = Math.floor(checkZ);
+                    const blockKeyStr = blockKey(blockX, blockY, blockZ);
+                    
+                    if (blocks.has(blockKeyStr)) {
+                        hitBlock = { x: blockX, y: blockY, z: blockZ };
+                        break;
                     }
                 }
                 
-                // Send explosion effect and block removals to clients
-                io.emit('fireballExplosion', {
-                    x: blockX,
-                    y: blockY,
-                    z: blockZ,
-                    blocksDestroyed: blocksDestroyed
-                });
-                
-                // Mark for removal
-                fireball.arrived = true;
-                fireballRemovals.push(id);
+                if (hitBlock) {
+                    // Hit a block - destroy blocks in 3x3x3 area
+                    fireball.hit = true;
+                    
+                    // Destroy blocks in a 3x3x3 area centered on the hit block
+                    const blocksDestroyed = [];
+                    for (let dx = -1; dx <= 1; dx++) {
+                        for (let dy = -1; dy <= 1; dy++) {
+                            for (let dz = -1; dz <= 1; dz++) {
+                                const x = hitBlock.x + dx;
+                                const y = hitBlock.y + dy;
+                                const z = hitBlock.z + dz;
+                                const key = blockKey(x, y, z);
+                                
+                                // Check if block exists and is not a bed (protect beds from fireball)
+                                if (blocks.has(key)) {
+                                    const blockType = blocks.get(key);
+                                    
+                                    // Don't destroy beds with fireballs
+                                    if (blockType === 'Bed') {
+                                        // Check if it's the player's own bed
+                                        const player = players.get(fireball.owner);
+                                        if (player && player.bedPos && 
+                                            player.bedPos.x === x && 
+                                            player.bedPos.y === y && 
+                                            player.bedPos.z === z) {
+                                            continue; // Don't destroy own bed
+                                        }
+                                    }
+                                    
+                                    removeBlock(x, y, z);
+                                    blocksDestroyed.push({ x, y, z, type: blockType });
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Send explosion effect and block removals to clients
+                    io.emit('fireballExplosion', {
+                        x: hitBlock.x,
+                        y: hitBlock.y,
+                        z: hitBlock.z,
+                        blocksDestroyed: blocksDestroyed
+                    });
+                    
+                    // Mark for removal
+                    fireball.arrived = true;
+                    fireballRemovals.push(id);
+                } else if (fireball.pos.y < -30 || now - fireball.createdAt > 10000) {
+                    // Fell into void or timeout (10 seconds)
+                    fireball.arrived = true;
+                    fireballRemovals.push(id);
+                } else {
+                    // Still in flight
+                    fireballUpdates.push({
+                        id: fireball.id,
+                        x: fireball.pos.x,
+                        y: fireball.pos.y,
+                        z: fireball.pos.z
+                    });
+                }
             } else if (fireball.pos.y < -30 || now - fireball.createdAt > 10000) {
                 // Fell into void or timeout (10 seconds)
                 fireball.arrived = true;
