@@ -68,7 +68,6 @@
             image-rendering: pixelated;
         }
 
-        /* New Hearts UI */
         #hearts {
             position: absolute;
             top: 160px;
@@ -78,9 +77,6 @@
             padding: 15px;
             border-radius: 10px;
             pointer-events: none;
-            display: flex;
-            align-items: center;
-            gap: 5px;
         }
 
         .heart {
@@ -194,41 +190,33 @@
             min-width: 550px;
             z-index: 20;
             box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            max-height: 80vh;
+            overflow-y: auto;
         }
 
-        .shop-tabs {
-            display: flex;
-            gap: 10px;
+        .shop-header {
             margin-bottom: 20px;
             border-bottom: 1px solid #555;
             padding-bottom: 10px;
         }
 
-        .shop-tab {
-            padding: 10px 20px;
-            background: #222;
-            border: 1px solid #444;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.2s;
+        .shop-category {
+            margin: 20px 0;
+            text-align: left;
         }
 
-        .shop-tab:hover {
-            background: #333;
-            border-color: #fff;
-        }
-
-        .shop-tab.active {
-            background: #444;
-            border-color: #fff;
+        .shop-category h3 {
             color: #fff;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+            margin-bottom: 10px;
         }
 
         .shop-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 12px;
-            margin-top: 15px;
+            margin-bottom: 20px;
         }
 
         .shop-item {
@@ -237,6 +225,7 @@
             cursor: pointer;
             background: #222;
             transition: 0.2s;
+            text-align: center;
         }
 
         .shop-item:hover {
@@ -443,9 +432,12 @@
             <img src="https://i.ibb.co/hxX4ywxj/pixilart-drawing-8.png" class="currency-icon">
             <span id="emerald">0</span>
         </div>
+        <!-- New Hearts Display -->
+        <div class="currency-row" id="hearts-display">
+            <div class="heart"></div>
+            <span id="heart-count">10</span>
+        </div>
     </div>
-    <!-- Hearts UI -->
-    <div id="hearts"></div>
     <div id="controls-hint">
         WASD: Move | SPACE: Jump<br>
         <span id="crouch-hint">SHIFT: Crouch</span> | 1-9: Select<br>
@@ -462,14 +454,11 @@
     <div id="item-name-overlay"></div>
     <div id="hotbar-container"></div>
     <div id="shop">
-        <h2>Shop</h2>
-        <div class="shop-tabs">
-            <button class="shop-tab active" data-category="blocks">Blocks</button>
-            <button class="shop-tab" data-category="weapons">Weapons</button>
-            <button class="shop-tab" data-category="misc">Miscellaneous</button>
+        <div class="shop-header">
+            <h2>Shop</h2>
+            <div style="color: #aaa; font-size: 0.9em; margin-bottom: 10px;">Scroll down to see all items</div>
         </div>
-        <div style="color: #aaa; font-size: 0.9em; margin-bottom: 10px;">Click to buy items</div>
-        <div class="shop-grid" id="shop-container"></div>
+        <div class="shop-categories" id="shop-container"></div>
         <p style="color: #888; margin-top: 20px; font-size: 0.8em;">Press [B] to Close</p>
     </div>
     <div id="notification"></div>
@@ -590,25 +579,18 @@
 
         // --- Health Functions ---
         function updateHeartsUI() {
-            const heartsContainer = document.getElementById('hearts');
-            heartsContainer.innerHTML = '';
-            
-            for (let i = 0; i < maxHealth; i++) {
-                const heart = document.createElement('div');
-                heart.className = i < playerHealth ? 'heart' : 'heart empty';
-                heartsContainer.appendChild(heart);
-            }
+            document.getElementById('heart-count').innerText = playerHealth;
         }
 
         function takeDamage(amount, source = null) {
             playerHealth = Math.max(0, playerHealth - amount);
             lastDamageTime = Date.now();
             
-            // Show red notification
+            // Show notification (now always white)
             if (source) {
-                showNotification(`Hit by ${source}! Health: ${playerHealth}/${maxHealth}`, 2000, 'red');
+                showNotification(`Hit by ${source}! Health: ${playerHealth}/${maxHealth}`);
             } else {
-                showNotification(`You took ${amount} damage! Health: ${playerHealth}/${maxHealth}`, 2000, 'red');
+                showNotification(`You took ${amount} damage! Health: ${playerHealth}/${maxHealth}`);
             }
             
             // Screen shake
@@ -628,7 +610,7 @@
             
             // Check if dead
             if (playerHealth <= 0) {
-                showNotification('You died!', 3000, 'red');
+                showNotification('You died!');
                 // Handle death (will be handled by server)
             }
         }
@@ -637,7 +619,7 @@
             if (playerHealth < maxHealth) {
                 playerHealth = Math.min(maxHealth, playerHealth + 1);
                 updateHeartsUI();
-                showNotification(`Healed! Health: ${playerHealth}/${maxHealth}`, 1500, '#4d9043');
+                showNotification(`Healed! Health: ${playerHealth}/${maxHealth}`);
                 
                 if (playerHealth < maxHealth) {
                     healthRegenTimer = setTimeout(startHealthRegeneration, 1000);
@@ -744,7 +726,6 @@
             if (spectator) {
                 indicator.style.display = 'block';
                 document.getElementById('stats').style.display = 'none';
-                document.getElementById('hearts').style.display = 'none';
                 document.getElementById('hotbar-container').style.display = 'none';
                 document.getElementById('crosshair').style.display = 'none';
                 document.getElementById('controls-hint').style.display = 'none';
@@ -769,7 +750,6 @@
             } else {
                 indicator.style.display = 'none';
                 document.getElementById('stats').style.display = 'block';
-                document.getElementById('hearts').style.display = 'flex';
                 document.getElementById('hotbar-container').style.display = 'flex';
                 document.getElementById('crosshair').style.display = 'block';
                 document.getElementById('controls-hint').style.display = 'block';
@@ -2205,6 +2185,7 @@
             document.getElementById('iron').innerText = currency.iron;
             document.getElementById('gold').innerText = currency.gold;
             document.getElementById('emerald').innerText = currency.emerald;
+            document.getElementById('heart-count').innerText = playerHealth;
 
             hotbarContainer.innerHTML = '';
             for (let i = 0; i < INVENTORY_SIZE; i++) {
@@ -2258,70 +2239,80 @@
             return true;
         }
 
-        function renderShop(category = 'blocks') {
+        function renderShop() {
             const container = document.getElementById('shop-container');
             container.innerHTML = '';
             
-            // Filter items by category
-            const items = Object.entries(BLOCK_TYPES)
-                .filter(([name, data]) => {
-                    if (name === 'Bed') return false;
-                    if (category === 'blocks') {
-                        return !data.isItem;
-                    } else if (category === 'weapons') {
-                        return data.isWeapon;
-                    } else if (category === 'misc') {
-                        return data.isItem && !data.isWeapon;
-                    }
-                    return false;
-                });
+            // Group items by category
+            const categories = {
+                'Blocks': [],
+                'Weapons': [],
+                'Miscellaneous': []
+            };
             
-            items.forEach(([name, data]) => {
-                const item = document.createElement('div');
-                const affordable = canAfford(data.cost);
-                item.className = `shop-item ${affordable ? '' : 'disabled'}`;
+            Object.entries(BLOCK_TYPES).forEach(([name, data]) => {
+                if (name === 'Bed') return;
                 
-                let imageUrl = '';
-                if (name === 'Grass') imageUrl = TEXTURE_URLS.grass;
-                else if (name === 'Wood') imageUrl = TEXTURE_URLS.wood;
-                else if (name === 'Stone') imageUrl = TEXTURE_URLS.stone;
-                else if (name === 'Obsidian') imageUrl = TEXTURE_URLS.obsidian;
-                else if (name === 'Glass') imageUrl = '';
-                else if (name === 'Enderpearl') imageUrl = TEXTURE_URLS.enderpearl;
-                else if (name === 'Fireball') imageUrl = TEXTURE_URLS.fireball;
-                else if (name === 'Wooden Sword') imageUrl = TEXTURE_URLS.woodenSword;
-                else if (name === 'Iron Sword') imageUrl = TEXTURE_URLS.ironSword;
-                else if (name === 'Emerald Sword') imageUrl = TEXTURE_URLS.emeraldSword;
-                
-                const costText = Object.entries(data.cost)
-                    .map(([res, amt]) => `${amt} ${res}`)
-                    .join(' + ');
-                
-                item.innerHTML = `
-                    ${imageUrl ? `<img src="${imageUrl}" class="shop-icon" alt="${name}">` : 
-                    `<div class="shop-icon" style="background:#${data.color.toString(16).padStart(6,'0')}; ${data.opacity ? `opacity:${data.opacity};` : ''}"></div>`}
-                    <strong>${name}</strong><br>
-                    <span style="font-size:0.9em; color:#aaa;">${data.buyAmount}x</span><br>
-                    <span style="color: ${affordable ? '#4d9043' : '#d32f2f'}">${costText}</span>
-                    ${data.isWeapon ? `<br><span style="color:#ff8888; font-size:0.8em;">Damage: ${data.damage}</span>` : ''}
-                `;
-                item.onclick = () => {
-                    wasBuying = true;
-                    socket.emit('buyAttempt', name);
-                };
-                container.appendChild(item);
+                if (data.isWeapon) {
+                    categories['Weapons'].push({ name, data });
+                } else if (data.isItem) {
+                    categories['Miscellaneous'].push({ name, data });
+                } else {
+                    categories['Blocks'].push({ name, data });
+                }
             });
-        }
-
-        function setupShopTabs() {
-            const tabs = document.querySelectorAll('.shop-tab');
-            tabs.forEach(tab => {
-                tab.addEventListener('click', () => {
-                    tabs.forEach(t => t.classList.remove('active'));
-                    tab.classList.add('active');
-                    const category = tab.dataset.category;
-                    renderShop(category);
+            
+            // Render each category
+            Object.entries(categories).forEach(([categoryName, items]) => {
+                if (items.length === 0) return;
+                
+                const categoryDiv = document.createElement('div');
+                categoryDiv.className = 'shop-category';
+                
+                const title = document.createElement('h3');
+                title.textContent = categoryName;
+                categoryDiv.appendChild(title);
+                
+                const grid = document.createElement('div');
+                grid.className = 'shop-grid';
+                
+                items.forEach(({ name, data }) => {
+                    const affordable = canAfford(data.cost);
+                    const item = document.createElement('div');
+                    item.className = `shop-item ${affordable ? '' : 'disabled'}`;
+                    
+                    let imageUrl = '';
+                    if (name === 'Grass') imageUrl = TEXTURE_URLS.grass;
+                    else if (name === 'Wood') imageUrl = TEXTURE_URLS.wood;
+                    else if (name === 'Stone') imageUrl = TEXTURE_URLS.stone;
+                    else if (name === 'Obsidian') imageUrl = TEXTURE_URLS.obsidian;
+                    else if (name === 'Enderpearl') imageUrl = TEXTURE_URLS.enderpearl;
+                    else if (name === 'Fireball') imageUrl = TEXTURE_URLS.fireball;
+                    else if (name === 'Wooden Sword') imageUrl = TEXTURE_URLS.woodenSword;
+                    else if (name === 'Iron Sword') imageUrl = TEXTURE_URLS.ironSword;
+                    else if (name === 'Emerald Sword') imageUrl = TEXTURE_URLS.emeraldSword;
+                    
+                    const costText = Object.entries(data.cost)
+                        .map(([res, amt]) => `${amt} ${res}`)
+                        .join(' + ');
+                    
+                    item.innerHTML = `
+                        ${imageUrl ? `<img src="${imageUrl}" class="shop-icon" alt="${name}">` : 
+                        `<div class="shop-icon" style="background:#${data.color.toString(16).padStart(6,'0')}; ${data.opacity ? `opacity:${data.opacity};` : ''}"></div>`}
+                        <strong>${name}</strong><br>
+                        <span style="font-size:0.9em; color:#aaa;">${data.buyAmount}x</span><br>
+                        <span style="color: ${affordable ? '#4d9043' : '#d32f2f'}">${costText}</span>
+                        ${data.isWeapon ? `<br><span style="color:#ff8888; font-size:0.8em;">Damage: ${data.damage}</span>` : ''}
+                    `;
+                    item.onclick = () => {
+                        wasBuying = true;
+                        socket.emit('buyAttempt', name);
+                    };
+                    grid.appendChild(item);
                 });
+                
+                categoryDiv.appendChild(grid);
+                container.appendChild(categoryDiv);
             });
         }
 
@@ -2337,19 +2328,15 @@
             } else {
                 shop.style.display = 'block';
                 controls.unlock();
-                if (!document.querySelector('.shop-tab').hasAttribute('data-initialized')) {
-                    setupShopTabs();
-                    document.querySelector('.shop-tab').setAttribute('data-initialized', 'true');
-                }
                 renderShop();
             }
         }
 
-        // Update showNotification function to support colors
-        function showNotification(msg, duration = 3000, color = 'white') {
+        // Updated showNotification function - always white
+        function showNotification(msg, duration = 3000) {
             const el = document.getElementById('notification');
             el.innerText = msg;
-            el.style.color = color;
+            el.style.color = 'white';
             el.style.display = 'block';
             setTimeout(() => {
                 el.style.display = 'none';
@@ -2700,11 +2687,11 @@
         socket.on('teleport', (data) => {
             camera.position.set(data.x, data.y, data.z);
             velocity.set(0, 0, 0);
-            showNotification('Teleported!', 1500);
+            showNotification('Teleported!');
         });
 
         socket.on('bedDestroyed', () => {
-            showNotification('Your bed was destroyed! You will not respawn!', 5000, 'red');
+            showNotification('Your bed was destroyed! You will not respawn!');
         });
 
         socket.on('notification', (msg) => {
@@ -2712,7 +2699,7 @@
         });
 
         socket.on('countdown', (sec) => {
-            showNotification(`Starting in ${sec}`, 1100);
+            showNotification(`Starting in ${sec}`);
             updateWaitingMessage(0);
         });
 
@@ -2723,7 +2710,7 @@
         });
 
         socket.on('assignBed', (data) => {
-            showNotification(`Assigned to Iron Island!`, 3000);
+            showNotification(`Assigned to Iron Island!`);
             setSpectatorMode(false);
             
             camera.position.set(data.pos.x, data.pos.y, data.pos.z);
@@ -2739,11 +2726,11 @@
 
         socket.on('gameEnd', ({ winner }) => {
             if (winner === playerId) {
-                showNotification('You Win!', 5000);
+                showNotification('You Win!');
             } else if (winner) {
-                showNotification(`Player ${winner.substring(0,6)} Wins!`, 5000);
+                showNotification(`Player ${winner.substring(0,6)} Wins!`);
             } else {
-                showNotification('Game ended with no winner!', 5000);
+                showNotification('Game ended with no winner!');
             }
             isInRound = false;
             stopRoundTimer();
@@ -2812,7 +2799,7 @@
             });
             
             setSpectatorMode(true);
-            showNotification('Game reset! Waiting for players...', 3000);
+            showNotification('Game reset! Waiting for players...');
         });
 
         socket.on('playerReset', (data) => {
@@ -2863,12 +2850,12 @@
 
         socket.on('playerEliminated', ({ eliminatedId, eliminatorId }) => {
             if (eliminatedId === playerId) {
-                showNotification('You were eliminated!', 3000, 'red');
-                document.getElementById('hearts').innerHTML = '';
+                showNotification('You were eliminated!');
+                document.getElementById('heart-count').innerText = '0';
             } else if (eliminatorId === playerId) {
-                showNotification(`You eliminated ${eliminatedId.substring(0,6)}!`, 3000);
+                showNotification(`You eliminated ${eliminatedId.substring(0,6)}!`);
             } else {
-                showNotification(`${eliminatedId.substring(0,6)} was eliminated!`, 3000);
+                showNotification(`${eliminatedId.substring(0,6)} was eliminated!`);
             }
             
             removeOtherPlayer(eliminatedId);
