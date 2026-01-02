@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -542,49 +543,6 @@
                 document.getElementById('fullscreen-overlay').style.display = 'none';
             }
         });
-
-        // --- Screen Shake Functions ---
-        function triggerScreenShake(intensity = 0.3, duration = 0.5) {
-            if (isSpectator) return;
-            
-            screenShakeIntensity = intensity;
-            screenShakeDuration = duration;
-            isShaking = true;
-            
-            // Store original camera position and rotation
-            originalCameraPosition.copy(camera.position);
-            originalCameraRotation.copy(camera.rotation);
-        }
-
-        function updateScreenShake(delta) {
-            if (!isShaking || isSpectator) return;
-            
-            if (screenShakeDuration > 0) {
-                // Calculate shake amount with decay
-                const shakeAmount = screenShakeIntensity * (screenShakeDuration / 0.5);
-                
-                // Apply random offset to camera position
-                const offsetX = (Math.random() - 0.5) * shakeAmount;
-                const offsetY = (Math.random() - 0.5) * shakeAmount;
-                const offsetZ = (Math.random() - 0.5) * shakeAmount;
-                
-                // Apply to camera
-                camera.position.x = originalCameraPosition.x + offsetX;
-                camera.position.y = originalCameraPosition.y + offsetY;
-                camera.position.z = originalCameraPosition.z + offsetZ;
-                
-                // Apply small rotation for more dramatic effect
-                camera.rotation.x = originalCameraRotation.x + (Math.random() - 0.5) * shakeAmount * 0.1;
-                camera.rotation.y = originalCameraRotation.y + (Math.random() - 0.5) * shakeAmount * 0.1;
-                
-                screenShakeDuration -= delta;
-            } else {
-                // Reset camera to original position
-                camera.position.copy(originalCameraPosition);
-                camera.rotation.copy(originalCameraRotation);
-                isShaking = false;
-            }
-        }
 
         // --- Timer Functions ---
         function updateTimerDisplay(seconds) {
@@ -2007,9 +1965,6 @@
             const delta = (time - prevTime) / 1000;
             prevTime = time;
 
-            // Update screen shake
-            updateScreenShake(delta);
-
             if (time - lastGeneratorUpdate > 100) {
                 resourceSpawners.forEach(spawner => {
                     updateGeneratorText(spawner);
@@ -2554,7 +2509,7 @@
                 } else if (name === 'Wind Charge') {
                     extraInfo = `<br><span style="color:#88ccff; font-size:0.8em;">Knocks back players 4 blocks</span>`;
                 } else if (name === 'Fireball') {
-                    extraInfo = `<br><span style="color:#ffaa00; font-size:0.8em;">Direct hit: 6 damage, Explosion: 1-6 damage</span>`;
+                    extraInfo = `<br><span style="color:#ffaa00; font-size:0.8em;">Direct hit: 6 damage, Explosion: 0 damage</span>`;
                 } else if (name === 'Enderpearl') {
                     extraInfo = `<br><span style="color:#88ff88; font-size:0.8em;">Teleports you to impact point</span>`;
                 }
@@ -2932,10 +2887,6 @@
             createWindchargeEffect(x, y, z);
         });
 
-        socket.on('screenShake', ({ intensity, duration }) => {
-            triggerScreenShake(intensity, duration);
-        });
-
         // Breaking animation events for other players
         socket.on('startBreaking', ({ x, y, z, playerId, breakTime }) => {
             if (playerId === socket.id) return;
@@ -3126,7 +3077,6 @@
             
             if (targetId === playerId && attackerId) {
                 showNotification(`You were hit! Health: ${newHealth}/10`, 2000);
-                // Only screen shake, no position change
             }
         });
 
