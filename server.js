@@ -549,7 +549,7 @@ function processBlockBreak(playerId, x, y, z) {
         // Find player who owns this bed
         players.forEach((player, pid) => {
             if (player.bedPos && player.bedPos.x === x && player.bedPos.y === y && player.bedPos.z === z) {
-                io.to(pid).emit('notification', 'Your bed was destroyed!', 'red');
+                io.to(pid).emit('notification', 'Your bed was destroyed!');
             }
         });
         
@@ -1126,8 +1126,13 @@ io.on('connection', (socket) => {
                 const activePlayers = getActivePlayers();
                 console.log(`Active players after disconnect: ${activePlayers.length}`);
                 
-                if (activePlayers.length <= 1) {
-                    endGame(activePlayers.length === 1 ? activePlayers[0].id : null);
+                // NEW: Reset map if there are less than 2 players
+                if (activePlayers.length < 2) {
+                    console.log(`Less than 2 players left (${activePlayers.length}), resetting game...`);
+                    resetGame();
+                } else {
+                    // Only check win condition if we have enough players
+                    checkWinCondition();
                 }
             } else {
                 players.delete(socket.id);
