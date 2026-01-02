@@ -3126,6 +3126,7 @@
             
             if (targetId === playerId && attackerId) {
                 showNotification(`You were hit! Health: ${newHealth}/10`, 2000);
+                // Only screen shake, no position change
             }
         });
 
