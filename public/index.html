@@ -68,6 +68,32 @@
             image-rendering: pixelated;
         }
 
+        /* New Hearts UI */
+        #hearts {
+            position: absolute;
+            top: 160px;
+            left: 20px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 15px;
+            border-radius: 10px;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .heart {
+            width: 24px;
+            height: 24px;
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23ff4444"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>');
+            background-size: contain;
+        }
+
+        .heart.empty {
+            filter: grayscale(100%) brightness(0.3);
+        }
+
         #item-name-overlay {
             position: absolute;
             bottom: 100px;
@@ -165,9 +191,37 @@
             display: none;
             text-align: center;
             border: 2px solid #555;
-            min-width: 450px;
+            min-width: 550px;
             z-index: 20;
             box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
+
+        .shop-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #555;
+            padding-bottom: 10px;
+        }
+
+        .shop-tab {
+            padding: 10px 20px;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .shop-tab:hover {
+            background: #333;
+            border-color: #fff;
+        }
+
+        .shop-tab.active {
+            background: #444;
+            border-color: #fff;
+            color: #fff;
         }
 
         .shop-grid {
@@ -257,6 +311,17 @@
             border-radius: 10px;
             display: none;
             z-index: 15;
+        }
+
+        /* Screen shake container */
+        .screen-shake {
+            animation: shake 0.3s ease;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0) translateY(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px) translateY(-5px); }
+            20%, 40%, 60%, 80% { transform: translateX(5px) translateY(5px); }
         }
 
         #spectator-indicator {
@@ -379,6 +444,8 @@
             <span id="emerald">0</span>
         </div>
     </div>
+    <!-- Hearts UI -->
+    <div id="hearts"></div>
     <div id="controls-hint">
         WASD: Move | SPACE: Jump<br>
         <span id="crouch-hint">SHIFT: Crouch</span> | 1-9: Select<br>
@@ -396,6 +463,11 @@
     <div id="hotbar-container"></div>
     <div id="shop">
         <h2>Shop</h2>
+        <div class="shop-tabs">
+            <button class="shop-tab active" data-category="blocks">Blocks</button>
+            <button class="shop-tab" data-category="weapons">Weapons</button>
+            <button class="shop-tab" data-category="misc">Miscellaneous</button>
+        </div>
         <div style="color: #aaa; font-size: 0.9em; margin-bottom: 10px;">Click to buy items</div>
         <div class="shop-grid" id="shop-container"></div>
         <p style="color: #888; margin-top: 20px; font-size: 0.8em;">Press [B] to Close</p>
@@ -432,19 +504,26 @@
         let lastEnderpearlThrow = 0;
         let lastFireballThrow = 0;
 
+        // --- Player Health System ---
+        let playerHealth = 10;
+        let maxHealth = 10;
+        let lastDamageTime = 0;
+        let healthRegenTimer = null;
+        let isShaking = false;
+
         // --- Config ---
         const BLOCK_TYPES = {
-            'Grass': { color: 0x4d9043, cost: { iron: 5 }, breakTime: 1.2, buyAmount: 8, hasTexture: true },
-            'Glass': { color: 0xade8f4, cost: { iron: 5 }, breakTime: 0.4, buyAmount: 16, opacity: 0.6 },
-            'Wood': { color: 0x5d4037, cost: { gold: 5 }, breakTime: 3, buyAmount: 32, hasTexture: true },
-            'Stone': { color: 0x777777, cost: { gold: 5 }, breakTime: 6, buyAmount: 8, hasTexture: true },
-            'Obsidian': { color: 0x111111, cost: { emerald: 1 }, breakTime: 12, buyAmount: 1, hasTexture: true },
-            'Bed': { color: 0xff0000, breakTime: 0.8, buyAmount: 1, hasTexture: false },
-            'Enderpearl': { color: 0x00ff88, cost: { emerald: 2 }, buyAmount: 1, isItem: true, hasTexture: true },
-            'Fireball': { color: 0xff5500, cost: { iron: 48 }, buyAmount: 1, isItem: true, hasTexture: true },
-            'Wooden Sword': { color: 0x8B4513, cost: { iron: 20 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 2, hasTexture: true },
-            'Iron Sword': { color: 0xC0C0C0, cost: { gold: 10 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 3, hasTexture: true },
-            'Emerald Sword': { color: 0x00FF00, cost: { emerald: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 4, hasTexture: true }
+            'Grass': { color: 0x4d9043, cost: { iron: 5 }, breakTime: 1.2, buyAmount: 8, hasTexture: true, category: 'blocks' },
+            'Glass': { color: 0xade8f4, cost: { iron: 5 }, breakTime: 0.4, buyAmount: 16, opacity: 0.6, category: 'blocks' },
+            'Wood': { color: 0x5d4037, cost: { gold: 5 }, breakTime: 3, buyAmount: 32, hasTexture: true, category: 'blocks' },
+            'Stone': { color: 0x777777, cost: { gold: 5 }, breakTime: 6, buyAmount: 8, hasTexture: true, category: 'blocks' },
+            'Obsidian': { color: 0x111111, cost: { emerald: 1 }, breakTime: 12, buyAmount: 1, hasTexture: true, category: 'blocks' },
+            'Bed': { color: 0xff0000, breakTime: 0.8, buyAmount: 1, hasTexture: false, category: 'blocks' },
+            'Enderpearl': { color: 0x00ff88, cost: { emerald: 2 }, buyAmount: 1, isItem: true, hasTexture: true, category: 'misc' },
+            'Fireball': { color: 0xff5500, cost: { iron: 48 }, buyAmount: 1, isItem: true, hasTexture: true, category: 'misc' },
+            'Wooden Sword': { color: 0x8B4513, cost: { iron: 20 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 2, hasTexture: true, category: 'weapons' },
+            'Iron Sword': { color: 0xC0C0C0, cost: { gold: 10 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 3, hasTexture: true, category: 'weapons' },
+            'Emerald Sword': { color: 0x00FF00, cost: { emerald: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 4, hasTexture: true, category: 'weapons' }
         };
         const MAX_STACK = 64;
         const INVENTORY_SIZE = 9;
@@ -481,8 +560,99 @@
         let blocksMeshes = new Map();
         let pickupMeshes = new Map();
         let otherPlayers = new Map();
-        let playerHealth = new Map();
+        let playerHealths = new Map();
         let playerSwords = new Map();
+
+        // --- Screen Shake Function ---
+        function screenShake(intensity = 0.2, duration = 300) {
+            if (isShaking) return;
+            isShaking = true;
+            
+            const cameraGroup = new THREE.Group();
+            cameraGroup.position.copy(camera.position);
+            cameraGroup.rotation.copy(camera.rotation);
+            scene.add(cameraGroup);
+            
+            const originalPosition = camera.position.clone();
+            const shakeInterval = setInterval(() => {
+                camera.position.x = originalPosition.x + (Math.random() - 0.5) * intensity;
+                camera.position.y = originalPosition.y + (Math.random() - 0.5) * intensity;
+                camera.position.z = originalPosition.z + (Math.random() - 0.5) * intensity;
+            }, 50);
+            
+            setTimeout(() => {
+                clearInterval(shakeInterval);
+                camera.position.copy(originalPosition);
+                isShaking = false;
+                scene.remove(cameraGroup);
+            }, duration);
+        }
+
+        // --- Health Functions ---
+        function updateHeartsUI() {
+            const heartsContainer = document.getElementById('hearts');
+            heartsContainer.innerHTML = '';
+            
+            for (let i = 0; i < maxHealth; i++) {
+                const heart = document.createElement('div');
+                heart.className = i < playerHealth ? 'heart' : 'heart empty';
+                heartsContainer.appendChild(heart);
+            }
+        }
+
+        function takeDamage(amount, source = null) {
+            playerHealth = Math.max(0, playerHealth - amount);
+            lastDamageTime = Date.now();
+            
+            // Show red notification
+            if (source) {
+                showNotification(`Hit by ${source}! Health: ${playerHealth}/${maxHealth}`, 2000, 'red');
+            } else {
+                showNotification(`You took ${amount} damage! Health: ${playerHealth}/${maxHealth}`, 2000, 'red');
+            }
+            
+            // Screen shake
+            screenShake(0.3, 400);
+            
+            // Update UI
+            updateHeartsUI();
+            
+            // Reset regeneration timer
+            if (healthRegenTimer) {
+                clearTimeout(healthRegenTimer);
+                healthRegenTimer = null;
+            }
+            
+            // Start regeneration after 10 seconds
+            healthRegenTimer = setTimeout(startHealthRegeneration, 10000);
+            
+            // Check if dead
+            if (playerHealth <= 0) {
+                showNotification('You died!', 3000, 'red');
+                // Handle death (will be handled by server)
+            }
+        }
+
+        function startHealthRegeneration() {
+            if (playerHealth < maxHealth) {
+                playerHealth = Math.min(maxHealth, playerHealth + 1);
+                updateHeartsUI();
+                showNotification(`Healed! Health: ${playerHealth}/${maxHealth}`, 1500, '#4d9043');
+                
+                if (playerHealth < maxHealth) {
+                    healthRegenTimer = setTimeout(startHealthRegeneration, 1000);
+                }
+            }
+        }
+
+        function resetHealth() {
+            playerHealth = maxHealth;
+            updateHeartsUI();
+            if (healthRegenTimer) {
+                clearTimeout(healthRegenTimer);
+                healthRegenTimer = null;
+            }
+        }
 
         // --- Fullscreen Functions ---
         function enterFullscreen() {
@@ -574,6 +744,7 @@
             if (spectator) {
                 indicator.style.display = 'block';
                 document.getElementById('stats').style.display = 'none';
+                document.getElementById('hearts').style.display = 'none';
                 document.getElementById('hotbar-container').style.display = 'none';
                 document.getElementById('crosshair').style.display = 'none';
                 document.getElementById('controls-hint').style.display = 'none';
@@ -598,6 +769,7 @@
             } else {
                 indicator.style.display = 'none';
                 document.getElementById('stats').style.display = 'block';
+                document.getElementById('hearts').style.display = 'flex';
                 document.getElementById('hotbar-container').style.display = 'flex';
                 document.getElementById('crosshair').style.display = 'block';
                 document.getElementById('controls-hint').style.display = 'block';
@@ -1937,7 +2109,8 @@
                     crouch: isCrouching,
                     selected: selectedSlotIndex,
                     spectator: isSpectator,
-                    equippedWeapon: equippedWeapon
+                    equippedWeapon: equippedWeapon,
+                    health: playerHealth
                 });
                 lastPlayerUpdate = time;
             }
@@ -1958,8 +2131,8 @@
                 }
                 data.group.scale.y = data.crouch ? 0.75 : 1;
                 
-                if (data.healthBar && playerHealth.has(id)) {
-                    const health = playerHealth.get(id);
+                if (data.healthBar && playerHealths.has(id)) {
+                    const health = playerHealths.get(id);
                     data.healthBar.style.width = `${health * 10}%`;
                     data.healthBar.style.backgroundColor = health > 5 ? '#4CAF50' : health > 2 ? '#FFA500' : '#FF0000';
                 }
@@ -2085,10 +2258,25 @@
             return true;
         }
 
-        function renderShop() {
+        function renderShop(category = 'blocks') {
             const container = document.getElementById('shop-container');
             container.innerHTML = '';
-            Object.entries(BLOCK_TYPES).filter(([name]) => name !== 'Bed').forEach(([name, data]) => {
+            
+            // Filter items by category
+            const items = Object.entries(BLOCK_TYPES)
+                .filter(([name, data]) => {
+                    if (name === 'Bed') return false;
+                    if (category === 'blocks') {
+                        return !data.isItem;
+                    } else if (category === 'weapons') {
+                        return data.isWeapon;
+                    } else if (category === 'misc') {
+                        return data.isItem && !data.isWeapon;
+                    }
+                    return false;
+                });
+            
+            items.forEach(([name, data]) => {
                 const item = document.createElement('div');
                 const affordable = canAfford(data.cost);
                 item.className = `shop-item ${affordable ? '' : 'disabled'}`;
@@ -2125,6 +2313,18 @@
             });
         }
 
+        function setupShopTabs() {
+            const tabs = document.querySelectorAll('.shop-tab');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    const category = tab.dataset.category;
+                    renderShop(category);
+                });
+            });
+        }
+
         function toggleShop() {
             if (isSpectator) return;
             
@@ -2137,8 +2337,23 @@
             } else {
                 shop.style.display = 'block';
                 controls.unlock();
+                if (!document.querySelector('.shop-tab').hasAttribute('data-initialized')) {
+                    setupShopTabs();
+                    document.querySelector('.shop-tab').setAttribute('data-initialized', 'true');
+                }
                 renderShop();
             }
+        }
+
+        // Update showNotification function to support colors
+        function showNotification(msg, duration = 3000, color = 'white') {
+            const el = document.getElementById('notification');
+            el.innerText = msg;
+            el.style.color = color;
+            el.style.display = 'block';
+            setTimeout(() => {
+                el.style.display = 'none';
+            }, duration);
         }
 
         function getPlayerColor(id) {
@@ -2224,7 +2439,7 @@
                 equippedWeapon: equippedWeapon
             });
 
-            playerHealth.set(id, health);
+            playerHealths.set(id, health);
             
             if (equippedWeapon) {
                 updateOtherPlayerSword(id, equippedWeapon);
@@ -2234,7 +2449,7 @@
         }
 
         function updatePlayerHealth(id, health) {
-            playerHealth.set(id, health);
+            playerHealths.set(id, health);
             
             const op = otherPlayers.get(id);
             if (!op || !op.group) return;
@@ -2268,21 +2483,15 @@
             if (op) {
                 scene.remove(op.group);
                 otherPlayers.delete(id);
-                playerHealth.delete(id);
+                playerHealths.delete(id);
                 if (playerSwords.has(id)) {
                     playerSwords.delete(id);
                 }
             }
         }
 
-        function showNotification(msg, duration = 3000) {
-            const el = document.getElementById('notification');
-            el.innerText = msg;
-            el.style.display = 'block';
-            setTimeout(() => {
-                el.style.display = 'none';
-            }, duration);
-        }
+        // Initialize hearts UI
+        updateHeartsUI();
 
         // Socket events
         socket.on('yourId', (id) => {
@@ -2377,6 +2586,8 @@
                     } else {
                         op.group.visible = true;
                     }
+                    
+                    updatePlayerHealth(id, health || 10);
                 }
             });
         });
@@ -2483,6 +2694,7 @@
             camera.position.set(data.pos.x, data.pos.y, data.pos.z);
             camera.rotation.set(data.rot.pitch, data.rot.yaw, 0);
             velocity.set(0, 0, 0);
+            resetHealth();
         });
 
         socket.on('teleport', (data) => {
@@ -2492,7 +2704,7 @@
         });
 
         socket.on('bedDestroyed', () => {
-            showNotification('Your bed was destroyed! You will not respawn!', 5000);
+            showNotification('Your bed was destroyed! You will not respawn!', 5000, 'red');
         });
 
         socket.on('notification', (msg) => {
@@ -2522,6 +2734,7 @@
             currency = data.currency;
             updateUI();
             updateSwordInHand();
+            resetHealth();
         });
 
         socket.on('gameEnd', ({ winner }) => {
@@ -2572,7 +2785,7 @@
                 scene.remove(op.group);
             });
             otherPlayers.clear();
-            playerHealth.clear();
+            playerHealths.clear();
             playerSwords.clear();
             
             breakingOverlays.forEach((data, key) => {
@@ -2610,6 +2823,7 @@
             updateUI();
             updateSwordInHand();
             velocity.set(0, 0, 0);
+            resetHealth();
         });
 
         socket.on('setSpectator', (spectator) => {
@@ -2631,17 +2845,26 @@
         });
 
         // Player combat events
-        socket.on('playerHit', ({ attackerId, targetId, newHealth }) => {
+        socket.on('playerHit', ({ attackerId, targetId, newHealth, damage }) => {
             updatePlayerHealth(targetId, newHealth);
             
             if (targetId === playerId && attackerId) {
-                showNotification(`You were hit! Health: ${newHealth}/10`, 2000);
+                takeDamage(damage, 'player');
+            }
+        });
+
+        socket.on('fireballHitPlayer', ({ attackerId, targetId, newHealth }) => {
+            updatePlayerHealth(targetId, newHealth);
+            
+            if (targetId === playerId && attackerId) {
+                takeDamage(6, 'fireball');
             }
         });
 
         socket.on('playerEliminated', ({ eliminatedId, eliminatorId }) => {
             if (eliminatedId === playerId) {
-                showNotification('You were eliminated!', 3000);
+                showNotification('You were eliminated!', 3000, 'red');
+                document.getElementById('hearts').innerHTML = '';
             } else if (eliminatorId === playerId) {
                 showNotification(`You eliminated ${eliminatedId.substring(0,6)}!`, 3000);
             } else {
@@ -2649,6 +2872,16 @@
             }
             
             removeOtherPlayer(eliminatedId);
+        });
+
+        // Health regeneration event
+        socket.on('healthRegenerated', ({ playerId: targetId, newHealth }) => {
+            if (targetId === playerId) {
+                playerHealth = newHealth;
+                updateHeartsUI();
+            } else {
+                updatePlayerHealth(targetId, newHealth);
+            }
         });
 
         // Start
