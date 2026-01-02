@@ -461,8 +461,8 @@
         const projectiles = new Map();
         const fireballProjectiles = new Map();
         
-        // Breaking overlays for other players - NEW: Store breaking overlays for all players
-        const breakingOverlays = new Map(); // Format: "x,y,z" -> { mesh, progress, lastUpdate }
+        // Breaking overlays for other players
+        const breakingOverlays = new Map();
 
         // Breaking state
         let isBreaking = false;
@@ -474,7 +474,7 @@
         // Crouching state
         let isCrouching = false;
 
-        // Sword in hand - KEEP BUT HIDE
+        // Sword in hand
         let swordInHand = null;
 
         let playerId = null;
@@ -605,7 +605,7 @@
                     document.getElementById('timer').style.display = 'block';
                 }
                 
-                // Update sword in hand - DON'T SHOW FOR LOCAL PLAYER
+                // Update sword in hand
                 updateSwordInHand();
                 
                 if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
@@ -830,7 +830,6 @@
                     rotation: 0
                 });
             } else {
-                // Fallback to colored sprite
                 material = new THREE.SpriteMaterial({ 
                     color: 0x00ff88,
                     transparent: true,
@@ -842,7 +841,6 @@
             pearl.position.set(data.x, data.y, data.z);
             pearl.scale.set(0.5, 0.5, 1);
             
-            // Store velocity for interpolation
             pearl.userData = { 
                 id: data.id, 
                 type: 'enderpearl',
@@ -860,7 +858,6 @@
         function updateEnderpearl(pearlData) {
             const pearl = projectiles.get(pearlData.id);
             if (pearl) {
-                // Smooth interpolation to server position
                 if (pearl.userData.lastPos) {
                     const lerpFactor = 0.3;
                     pearl.position.x = THREE.MathUtils.lerp(
@@ -904,9 +901,8 @@
                     transparent: true
                 });
             } else {
-                // Fallback to original fireball color
                 material = new THREE.SpriteMaterial({ 
-                    color: 0xaaaaaa, // Original fireball color
+                    color: 0xaaaaaa,
                     opacity: 1.0,
                     transparent: true
                 });
@@ -914,9 +910,8 @@
             
             const fireball = new THREE.Sprite(material);
             fireball.position.set(data.x, data.y, data.z);
-            fireball.scale.set(0.8, 0.8, 1); // Fixed scale, no pulsing
+            fireball.scale.set(0.8, 0.8, 1);
             
-            // Store velocity for interpolation
             fireball.userData = { 
                 id: data.id, 
                 type: 'fireball',
@@ -934,7 +929,6 @@
         function updateFireballMesh(fireballData) {
             const fireball = fireballProjectiles.get(fireballData.id);
             if (fireball) {
-                // Smooth interpolation to server position
                 if (fireball.userData.lastPos) {
                     const lerpFactor = 0.3;
                     fireball.position.x = THREE.MathUtils.lerp(
@@ -969,7 +963,6 @@
 
         // Fireball explosion effect
         function createFireballExplosion(x, y, z) {
-            // Create explosion particles
             const particleCount = 30;
             const explosionGroup = new THREE.Group();
             
@@ -982,7 +975,6 @@
                 });
                 const particle = new THREE.Mesh(geometry, material);
                 
-                // Random direction
                 const angle = Math.random() * Math.PI * 2;
                 const speed = 2 + Math.random() * 3;
                 particle.userData.velocity = {
@@ -999,7 +991,6 @@
             
             scene.add(explosionGroup);
             
-            // Animate explosion
             function animateExplosion() {
                 let allDead = true;
                 
@@ -1020,7 +1011,6 @@
                     requestAnimationFrame(animateExplosion);
                 } else {
                     scene.remove(explosionGroup);
-                    // Dispose geometry and materials
                     explosionGroup.children.forEach(particle => {
                         particle.geometry.dispose();
                         particle.material.dispose();
@@ -1033,11 +1023,6 @@
 
         // --- Sword Functions ---
         function createSwordMesh(type, playerId = null) {
-            // If this is for the local player, don't create it (hide swords)
-            if (!playerId) {
-                return null;
-            }
-            
             let texture = null;
             if (type === 'Wooden Sword' && woodenSwordTexture) texture = woodenSwordTexture;
             else if (type === 'Iron Sword' && ironSwordTexture) texture = ironSwordTexture;
@@ -1061,21 +1046,17 @@
         }
 
         function updateSwordInHand() {
-            // Remove existing sword
             if (swordInHand) {
                 scene.remove(swordInHand);
                 swordInHand = null;
             }
             
-            // Check if current slot has a sword
             const currentSlot = inventory[selectedSlotIndex];
             if (currentSlot && currentSlot.type && BLOCK_TYPES[currentSlot.type] && BLOCK_TYPES[currentSlot.type].isWeapon) {
-                // Don't create sword for local player (hide it)
+                // Don't create sword for local player
                 // swordInHand = createSwordMesh(currentSlot.type);
                 // if (swordInHand) {
-                //     // Position sword in view - MADE BIGGER
                 //     swordInHand.position.set(-0.4, -0.3, -0.5);
-                //     // Increased scale from 0.6 to 1.0
                 //     swordInHand.scale.set(1.0, 1.0, 1);
                 //     scene.add(swordInHand);
                 // }
@@ -1086,20 +1067,16 @@
             const op = otherPlayers.get(playerId);
             if (!op || !op.group) return;
             
-            // Remove existing sword
             if (playerSwords.has(playerId)) {
                 const oldSword = playerSwords.get(playerId);
                 op.group.remove(oldSword);
                 playerSwords.delete(playerId);
             }
             
-            // Add new sword if swordType exists
             if (swordType && BLOCK_TYPES[swordType] && BLOCK_TYPES[swordType].isWeapon) {
                 const sword = createSwordMesh(swordType, playerId);
                 if (sword) {
-                    // Position in right hand
                     sword.position.set(-0.7, 0.8, 0.2);
-                    // Increased scale from 0.4 to 0.8
                     sword.scale.set(0.8, 0.8, 1);
                     
                     op.group.add(sword);
@@ -1112,14 +1089,12 @@
         function createOtherPlayerBreakingOverlay(x, y, z, progress) {
             const key = `${x},${y},${z}`;
             
-            // Remove existing overlay if any
             if (breakingOverlays.has(key)) {
                 const existing = breakingOverlays.get(key);
                 scene.remove(existing.mesh);
                 breakingOverlays.delete(key);
             }
             
-            // Create new overlay
             if (breakingTextures.length > 0) {
                 const textureIndex = Math.min(Math.floor(progress * 9), 8);
                 const overlayMaterial = new THREE.MeshBasicMaterial({
@@ -1177,7 +1152,7 @@
             const toRemove = [];
             
             breakingOverlays.forEach((data, key) => {
-                if (now - data.lastUpdate > 5000) { // Remove after 5 seconds of no updates
+                if (now - data.lastUpdate > 5000) {
                     toRemove.push(key);
                 }
             });
@@ -1342,10 +1317,8 @@
             
             const intersect = intersects[0];
             
-            // Check if it's the same block
             const sameBlock = intersect.object === breakingBlock;
             
-            // Check distance
             const inRange = intersect.distance <= 5;
             
             return sameBlock && inRange;
@@ -1455,8 +1428,7 @@
 
             raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
             
-            if (e.button === 0) { // Left click
-                // First check for player hits
+            if (e.button === 0) {
                 const playerObjects = Array.from(otherPlayers.values())
                     .filter(op => !op.spectator)
                     .map(op => op.group);
@@ -1471,7 +1443,6 @@
                             return;
                         }
                         
-                        // Find the player ID
                         let obj = intersect.object;
                         while (obj && !otherPlayers.has(obj.name)) {
                             obj = obj.parent;
@@ -1484,7 +1455,6 @@
                     }
                 }
                 
-                // If no player hit, check for blocks
                 const blockIntersects = raycaster.intersectObjects(blocksInScene);
                 if (blockIntersects.length > 0) {
                     const intersect = blockIntersects[0];
@@ -1503,7 +1473,6 @@
                         breakingDuration = BLOCK_TYPES[type].breakTime * 1000;
                         document.getElementById('break-progress').style.display = 'block';
                         
-                        // Send breaking start to server
                         const x = Math.floor(breakingBlock.position.x - 0.5);
                         const y = Math.floor(breakingBlock.position.y - 0.5);
                         const z = Math.floor(breakingBlock.position.z - 0.5);
@@ -1530,24 +1499,20 @@
                         }
                     }
                 }
-            } else if (e.button === 2) { // Right click
+            } else if (e.button === 2) {
                 const currentSlot = inventory[selectedSlotIndex];
                 
-                // Check if we have an enderpearl selected
                 if (currentSlot && currentSlot.type === 'Enderpearl' && currentSlot.count > 0) {
-                    // Check client-side cooldown (1 second = 1000ms)
                     const now = Date.now();
                     if (now - lastEnderpearlThrow < 1000) {
                         socket.emit('notification', 'Enderpearl cooldown!');
                         return;
                     }
                     
-                    // Calculate target position (looking direction, 50 blocks away)
                     const direction = new THREE.Vector3(0, 0, -1);
                     direction.applyQuaternion(camera.quaternion);
                     direction.normalize();
                     
-                    // Set throw distance
                     const throwDistance = 50;
                     const targetPos = {
                         x: camera.position.x + direction.x * throwDistance,
@@ -1555,27 +1520,22 @@
                         z: camera.position.z + direction.z * throwDistance
                     };
                     
-                    // Send throw event with target position
                     socket.emit('throwEnderpearl', targetPos);
                     lastEnderpearlThrow = now;
                     return;
                 }
                 
-                // Check if we have a fireball selected
                 else if (currentSlot && currentSlot.type === 'Fireball' && currentSlot.count > 0) {
-                    // Check client-side cooldown (0.1 seconds = 100ms)
                     const now = Date.now();
                     if (now - lastFireballThrow < 100) {
                         socket.emit('notification', 'Fireball cooldown!');
                         return;
                     }
                     
-                    // Calculate target position (looking direction, 50 blocks away)
                     const direction = new THREE.Vector3(0, 0, -1);
                     direction.applyQuaternion(camera.quaternion);
                     direction.normalize();
                     
-                    // Set throw distance
                     const throwDistance = 50;
                     const targetPos = {
                         x: camera.position.x + direction.x * throwDistance,
@@ -1583,13 +1543,11 @@
                         z: camera.position.z + direction.z * throwDistance
                     };
                     
-                    // Send throw event with target position
                     socket.emit('throwFireball', targetPos);
                     lastFireballThrow = now;
                     return;
                 }
                 
-                // Regular block placement
                 const blockIntersects = raycaster.intersectObjects(blocksInScene);
                 if (blockIntersects.length > 0 && currentSlot && currentSlot.count > 0) {
                     const intersect = blockIntersects[0];
@@ -1630,7 +1588,6 @@
         document.addEventListener('mouseup', (e) => {
             if (e.button === 0) {
                 if (isBreaking && breakingBlock) {
-                    // Send breaking stop to server
                     const x = Math.floor(breakingBlock.position.x - 0.5);
                     const y = Math.floor(breakingBlock.position.y - 0.5);
                     const z = Math.floor(breakingBlock.position.z - 0.5);
@@ -1701,7 +1658,6 @@
                 lastGeneratorUpdate = time;
             }
             
-            // Clean up old breaking overlays
             cleanupOldBreakingOverlays();
 
             if (isBreaking && breakingBlock && !isSpectator) {
@@ -1734,8 +1690,7 @@
                         }
                     }
                     
-                    // Send breaking progress updates to server periodically
-                    if (time - lastBreakingProgressEmitted > 100) { // Every 100ms
+                    if (time - lastBreakingProgressEmitted > 100) {
                         const x = Math.floor(breakingBlock.position.x - 0.5);
                         const y = Math.floor(breakingBlock.position.y - 0.5);
                         const z = Math.floor(breakingBlock.position.z - 0.5);
@@ -1753,7 +1708,6 @@
                         const z = Math.floor(breakingBlock.position.z - 0.5);
                         socket.emit('breakAttempt', { x, y, z });
                         
-                        // Send breaking stop
                         socket.emit('stopBreaking', { x, y, z });
                         
                         isBreaking = false;
@@ -1792,84 +1746,67 @@
                 }
             }
 
-            // Update enderpearl animations
             projectiles.forEach((pearl, id) => {
                 const userData = pearl.userData;
                 if (!userData || !userData.velocity) return;
                 
-                // Calculate time since last update
                 const deltaTime = (now - userData.lastUpdate) / 1000;
                 
                 if (deltaTime > 0) {
-                    // Store last position for interpolation
                     userData.lastPos = {
                         x: pearl.position.x,
                         y: pearl.position.y,
                         z: pearl.position.z
                     };
                     
-                    // Update position based on velocity (client-side prediction)
                     pearl.position.x += userData.velocity.x * deltaTime;
                     pearl.position.y += userData.velocity.y * deltaTime;
                     pearl.position.z += userData.velocity.z * deltaTime;
                     
-                    // Apply gravity
                     const GRAVITY = 20;
                     userData.velocity.y -= GRAVITY * deltaTime;
                     
                     userData.lastUpdate = now;
                     
-                    // Make the enderpearl face the camera
                     pearl.lookAt(camera.position);
                     
-                    // Add a spinning effect
                     pearl.material.rotation += 0.1;
                     pearl.material.needsUpdate = true;
                     
-                    // Add a slight pulsing effect
                     const pulse = 0.1 * Math.sin(now / 200);
                     pearl.scale.set(0.5 + pulse, 0.5 + pulse, 1);
                 }
             });
 
-            // Update fireball animations - WITH BLOCK COLLISION DETECTION
             fireballProjectiles.forEach((fireball, id) => {
                 const userData = fireball.userData;
                 if (!userData || !userData.velocity) return;
                 
-                // Calculate time since last update
                 const deltaTime = (now - userData.lastUpdate) / 1000;
                 
                 if (deltaTime > 0) {
-                    // Store last position for interpolation
                     const lastPos = {
                         x: fireball.position.x,
                         y: fireball.position.y,
                         z: fireball.position.z
                     };
                     
-                    // Update position based on velocity (client-side prediction)
                     fireball.position.x += userData.velocity.x * deltaTime;
                     fireball.position.y += userData.velocity.y * deltaTime;
                     fireball.position.z += userData.velocity.z * deltaTime;
                     
-                    // Apply gravity
                     const GRAVITY = 10;
                     userData.velocity.y -= GRAVITY * deltaTime;
                     
                     userData.lastUpdate = now;
                     
-                    // Make the fireball face the camera
                     fireball.lookAt(camera.position);
                     
-                    // Fixed scale only - no changes in size
                     fireball.scale.set(0.8, 0.8, 1);
                     
-                    // Fixed opacity at 1.0
                     fireball.material.opacity = 1.0;
                     fireball.material.needsUpdate = true;
                     
-                    // NEW: Check for block collisions using raycasting
                     const currentPos = fireball.position.clone();
                     const direction = new THREE.Vector3().subVectors(currentPos, lastPos);
                     const distance = direction.length();
@@ -1877,24 +1814,19 @@
                     if (distance > 0) {
                         direction.normalize();
                         
-                        // Create a raycaster to check for blocks along the fireball's path
                         const tempRaycaster = new THREE.Raycaster();
                         tempRaycaster.set(lastPos, direction);
                         
-                        // Check for intersections with blocks
                         const intersects = tempRaycaster.intersectObjects(blocksInScene);
                         
                         if (intersects.length > 0) {
                             const intersect = intersects[0];
-                            // Only trigger if the intersection is within the distance traveled
                             if (intersect.distance <= distance) {
-                                // Fireball hit a block - send explosion to server
                                 const hitBlock = intersect.object;
                                 const blockX = Math.floor(hitBlock.position.x - 0.5);
                                 const blockY = Math.floor(hitBlock.position.y - 0.5);
                                 const blockZ = Math.floor(hitBlock.position.z - 0.5);
                                 
-                                // Notify server about fireball hitting block
                                 socket.emit('fireballHitBlock', {
                                     fireballId: id,
                                     x: blockX,
@@ -1902,10 +1834,8 @@
                                     z: blockZ
                                 });
                                 
-                                // Create client-side explosion effect immediately
                                 createFireballExplosion(blockX, blockY, blockZ);
                                 
-                                // Remove the fireball mesh
                                 removeFireballMesh(id);
                             }
                         }
@@ -1913,9 +1843,7 @@
                 }
             });
 
-            // Always apply physics for non-spectator players, even when controls aren't locked
             if (!isSpectator) {
-                // Always apply gravity
                 velocity.y -= 20.0 * delta;
 
                 const direction = new THREE.Vector3();
@@ -1926,7 +1854,6 @@
                 const baseSpeed = 5.0;
                 const speed = isCrouching ? baseSpeed * 0.6 : baseSpeed;
 
-                // Only process movement if controls are locked
                 if (controls.isLocked) {
                     if (direction.x !== 0) {
                         const moveDir = new THREE.Vector3(1, 0, 0);
@@ -1951,7 +1878,6 @@
                     }
                 }
                 
-                // Apply velocity (gravity)
                 camera.position.y += velocity.y * delta;
                 onGround = false;
 
@@ -1973,10 +1899,8 @@
                 }
 
                 if (camera.position.y < -30 && isInRound) {
-                    // Death handled server-side
                 }
             } else if (controls.isLocked) {
-                // spectator movement
                 const direction = new THREE.Vector3();
                 direction.z = Number(moveState.fwd) - Number(moveState.bwd);
                 direction.x = Number(moveState.r) - Number(moveState.l);
@@ -2003,7 +1927,6 @@
                 onGround = true;
             }
 
-            // Send player updates even when shop is open or controls aren't locked
             if (!isSpectator && socket.connected && time - lastPlayerUpdate > 50) {
                 const currentSlot = inventory[selectedSlotIndex];
                 const equippedWeapon = currentSlot && currentSlot.type && BLOCK_TYPES[currentSlot.type] && BLOCK_TYPES[currentSlot.type].isWeapon ? currentSlot.type : null;
@@ -2035,14 +1958,12 @@
                 }
                 data.group.scale.y = data.crouch ? 0.75 : 1;
                 
-                // Update health bar
                 if (data.healthBar && playerHealth.has(id)) {
                     const health = playerHealth.get(id);
                     data.healthBar.style.width = `${health * 10}%`;
                     data.healthBar.style.backgroundColor = health > 5 ? '#4CAF50' : health > 2 ? '#FFA500' : '#FF0000';
                 }
                 
-                // Update sword for other players
                 if (playerSwords.has(id)) {
                     const sword = playerSwords.get(id);
                     sword.lookAt(camera.position);
@@ -2388,7 +2309,14 @@
                 if (spectator) return;
                 createOtherPlayer(id, health || 10, equippedWeapon);
                 const op = otherPlayers.get(id);
-                op.targetPos = pos;
+                
+                // FIX: Convert eye position to feet position by subtracting eye height
+                const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
+                op.targetPos = {
+                    x: pos.x,
+                    y: pos.y - eyeHeight, // Subtract eye height to get feet position
+                    z: pos.z
+                };
                 op.targetRot = rot;
                 op.targetCrouch = crouch;
                 op.spectator = spectator;
@@ -2400,7 +2328,14 @@
             if (spectator) return;
             createOtherPlayer(id, health || 10, equippedWeapon);
             const op = otherPlayers.get(id);
-            op.targetPos = pos;
+            
+            // FIX: Convert eye position to feet position by subtracting eye height
+            const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
+            op.targetPos = {
+                x: pos.x,
+                y: pos.y - eyeHeight, // Subtract eye height to get feet position
+                z: pos.z
+            };
             op.targetRot = rot;
             op.targetCrouch = crouch;
             op.spectator = spectator;
@@ -2416,7 +2351,13 @@
                     op = otherPlayers.get(id);
                 }
                 if (op) {
-                    op.targetPos = pos;
+                    // FIX: Convert eye position to feet position by subtracting eye height
+                    const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
+                    op.targetPos = {
+                        x: pos.x,
+                        y: pos.y - eyeHeight, // Subtract eye height to get feet position
+                        z: pos.z
+                    };
                     op.targetRot = rot;
                     op.targetCrouch = crouch;
                     op.spectator = spectator;
@@ -2506,10 +2447,8 @@
         });
 
         socket.on('fireballExplosion', ({ x, y, z, blocksDestroyed }) => {
-            // Create explosion effect
             createFireballExplosion(x, y, z);
             
-            // Remove blocks that were destroyed by the fireball
             if (blocksDestroyed) {
                 blocksDestroyed.forEach(({ x, y, z }) => {
                     removeBlockMesh(x, y, z);
@@ -2519,19 +2458,19 @@
 
         // Breaking animation events for other players
         socket.on('startBreaking', ({ x, y, z, playerId, breakTime }) => {
-            if (playerId === socket.id) return; // Don't show our own breaking overlay
+            if (playerId === socket.id) return;
             
             createOtherPlayerBreakingOverlay(x, y, z, 0);
         });
 
         socket.on('breakingProgress', ({ x, y, z, playerId, progress }) => {
-            if (playerId === socket.id) return; // Don't update our own breaking overlay
+            if (playerId === socket.id) return;
             
             updateOtherPlayerBreakingOverlay(x, y, z, progress);
         });
 
         socket.on('stopBreaking', ({ x, y, z, playerId }) => {
-            if (playerId === socket.id) return; // Don't remove our own breaking overlay
+            if (playerId === socket.id) return;
             
             removeOtherPlayerBreakingOverlay(x, y, z);
         });
@@ -2599,21 +2538,18 @@
         });
 
         socket.on('worldReset', (data) => {
-            // Clear blocks
             blocksInScene.forEach((m) => {
                 scene.remove(m);
             });
             blocksInScene.length = 0;
             blocksMeshes.clear();
             
-            // Clear pickups
             resourcePickups.forEach((m) => {
                 scene.remove(m);
             });
             resourcePickups.length = 0;
             pickupMeshes.clear();
             
-            // Clear spawners
             resourceSpawners.forEach((spawner) => {
                 scene.remove(spawner);
                 if (spawner.userData.textSprite) {
@@ -2622,19 +2558,16 @@
             });
             resourceSpawners.length = 0;
             
-            // Clear enderpearls
             projectiles.forEach((pearl, id) => {
                 removeEnderpearlMesh(id);
             });
             projectiles.clear();
             
-            // Clear fireballs
             fireballProjectiles.forEach((fireball, id) => {
                 removeFireballMesh(id);
             });
             fireballProjectiles.clear();
             
-            // Clear other players
             otherPlayers.forEach((op, id) => {
                 scene.remove(op.group);
             });
@@ -2642,27 +2575,22 @@
             playerHealth.clear();
             playerSwords.clear();
             
-            // Clear breaking overlays
             breakingOverlays.forEach((data, key) => {
                 scene.remove(data.mesh);
             });
             breakingOverlays.clear();
             
-            // Clear sword in hand
             if (swordInHand) {
                 scene.remove(swordInHand);
                 swordInHand = null;
             }
             
-            // Add new blocks
             data.blocks.forEach(({ x, y, z, type }) => {
                 addBlockMesh(x, y, z, type);
             });
             
-            // Add new pickups
             data.pickups.forEach(addPickupMesh);
             
-            // Add new spawners
             data.spawners.forEach((s) => {
                 const spawnerMesh = addResourceSpawner(s.x, s.y, s.z, s.resourceType, s.interval, s.lastSpawn);
                 if (s.lastSpawn) {
