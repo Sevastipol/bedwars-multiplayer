@@ -432,6 +432,13 @@
         let lastEnderpearlThrow = 0;
         let lastFireballThrow = 0;
 
+        // --- Screen Shake Variables ---
+        let screenShakeIntensity = 0;
+        let screenShakeDuration = 0;
+        let originalCameraPosition = new THREE.Vector3();
+        let originalCameraRotation = new THREE.Euler();
+        let isShaking = false;
+
         // --- Config ---
         const BLOCK_TYPES = {
             'Grass': { color: 0x4d9043, cost: { iron: 5 }, breakTime: 1.2, buyAmount: 8, hasTexture: true },
@@ -444,7 +451,9 @@
             'Fireball': { color: 0xff5500, cost: { iron: 48 }, buyAmount: 1, isItem: true, hasTexture: true },
             'Wooden Sword': { color: 0x8B4513, cost: { iron: 20 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 2, hasTexture: true },
             'Iron Sword': { color: 0xC0C0C0, cost: { gold: 10 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 3, hasTexture: true },
-            'Emerald Sword': { color: 0x00FF00, cost: { emerald: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 4, hasTexture: true }
+            'Emerald Sword': { color: 0x00FF00, cost: { emerald: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 4, hasTexture: true },
+            'Axe': { color: 0x8B4513, cost: { gold: 20 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'axe', breakMultiplier: 0.5, hasTexture: true },
+            'Pickaxe': { color: 0xC0C0C0, cost: { gold: 20 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'pickaxe', breakMultiplier: 0.5, hasTexture: true }
         };
         const MAX_STACK = 64;
         const INVENTORY_SIZE = 9;
@@ -476,6 +485,7 @@
 
         // Sword in hand
         let swordInHand = null;
+        let toolInHand = null;
 
         let playerId = null;
         let blocksMeshes = new Map();
@@ -529,6 +539,49 @@
                 document.getElementById('fullscreen-overlay').style.display = 'none';
             }
         });
+
+        // --- Screen Shake Functions ---
+        function triggerScreenShake(intensity = 0.3, duration = 0.5) {
+            if (isSpectator) return;
+            
+            screenShakeIntensity = intensity;
+            screenShakeDuration = duration;
+            isShaking = true;
+            
+            // Store original camera position and rotation
+            originalCameraPosition.copy(camera.position);
+            originalCameraRotation.copy(camera.rotation);
+        }
+
+        function updateScreenShake(delta) {
+            if (!isShaking || isSpectator) return;
+            
+            if (screenShakeDuration > 0) {
+                // Calculate shake amount with decay
+                const shakeAmount = screenShakeIntensity * (screenShakeDuration / 0.5);
+                
+                // Apply random offset to camera position
+                const offsetX = (Math.random() - 0.5) * shakeAmount;
+                const offsetY = (Math.random() - 0.5) * shakeAmount;
+                const offsetZ = (Math.random() - 0.5) * shakeAmount;
+                
+                // Apply to camera
+                camera.position.x = originalCameraPosition.x + offsetX;
+                camera.position.y = originalCameraPosition.y + offsetY;
+                camera.position.z = originalCameraPosition.z + offsetZ;
+                
+                // Apply small rotation for more dramatic effect
+                camera.rotation.x = originalCameraRotation.x + (Math.random() - 0.5) * shakeAmount * 0.1;
+                camera.rotation.y = originalCameraRotation.y + (Math.random() - 0.5) * shakeAmount * 0.1;
+                
+                screenShakeDuration -= delta;
+            } else {
+                // Reset camera to original position
+                camera.position.copy(originalCameraPosition);
+                camera.rotation.copy(originalCameraRotation);
+                isShaking = false;
+            }
+        }
 
         // --- Timer Functions ---
         function updateTimerDisplay(seconds) {
@@ -588,6 +641,11 @@
                     swordInHand = null;
                 }
                 
+                if (toolInHand) {
+                    scene.remove(toolInHand);
+                    toolInHand = null;
+                }
+                
                 if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
                     setTimeout(() => {
                         if (!controls.isLocked && !isShopOpen()) {
@@ -605,8 +663,8 @@
                     document.getElementById('timer').style.display = 'block';
                 }
                 
-                // Update sword in hand
-                updateSwordInHand();
+                // Update equipment in hand
+                updateEquipmentInHand();
                 
                 if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
                     setTimeout(() => {
@@ -655,6 +713,8 @@
         let woodenSwordTexture = null;
         let ironSwordTexture = null;
         let emeraldSwordTexture = null;
+        let axeTexture = null;
+        let pickaxeTexture = null;
         let breakingTextures = [];
 
         // Texture URLs
@@ -670,7 +730,9 @@
             fireball: 'https://i.ibb.co/Kc4xPxSJ/pixilart-drawing-9.png',
             woodenSword: 'https://i.ibb.co/mLZmwsJ/pixil-frame-0-10.png',
             ironSword: 'https://i.ibb.co/F4NZLPzj/pixil-frame-0-11.png',
-            emeraldSword: 'https://i.ibb.co/przKkdMP/pixil-frame-0-12.png'
+            emeraldSword: 'https://i.ibb.co/przKkdMP/pixil-frame-0-12.png',
+            axe: 'https://i.ibb.co/MDqY0ZM2/pixil-frame-0-13.png',
+            pickaxe: 'https://i.ibb.co/MvmWrKG/pixil-frame-0-15.png'
         };
 
         // Load textures
@@ -752,6 +814,18 @@
             texture.magFilter = THREE.NearestFilter;
             texture.minFilter = THREE.NearestFilter;
             emeraldSwordTexture = texture;
+        });
+
+        textureLoader.load(TEXTURE_URLS.axe, (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            axeTexture = texture;
+        });
+
+        textureLoader.load(TEXTURE_URLS.pickaxe, (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            pickaxeTexture = texture;
         });
 
         // Load breaking textures
@@ -1044,42 +1118,59 @@
             return sword;
         }
 
-        function updateSwordInHand() {
+        // --- Tool Functions ---
+        function createToolMesh(type, playerId = null) {
+            let texture = null;
+            if (type === 'Axe' && axeTexture) texture = axeTexture;
+            else if (type === 'Pickaxe' && pickaxeTexture) texture = pickaxeTexture;
+            
+            if (!texture) return null;
+            
+            const material = new THREE.SpriteMaterial({ 
+                map: texture,
+                transparent: true,
+                opacity: 0.9
+            });
+            
+            const tool = new THREE.Sprite(material);
+            
+            if (playerId) {
+                tool.userData = { type: 'tool', playerId: playerId, toolType: type };
+            }
+            
+            return tool;
+        }
+
+        function updateEquipmentInHand() {
+            // Remove existing equipment
             if (swordInHand) {
                 scene.remove(swordInHand);
                 swordInHand = null;
             }
             
+            if (toolInHand) {
+                scene.remove(toolInHand);
+                toolInHand = null;
+            }
+            
             const currentSlot = inventory[selectedSlotIndex];
-            if (currentSlot && currentSlot.type && BLOCK_TYPES[currentSlot.type] && BLOCK_TYPES[currentSlot.type].isWeapon) {
-                // Don't create sword for local player
-                // swordInHand = createSwordMesh(currentSlot.type);
-                // if (swordInHand) {
-                //     swordInHand.position.set(-0.4, -0.3, -0.5);
-                //     swordInHand.scale.set(1.0, 1.0, 1);
-                //     scene.add(swordInHand);
-                // }
-            }
-        }
-
-        function updateOtherPlayerSword(playerId, swordType) {
-            const op = otherPlayers.get(playerId);
-            if (!op || !op.group) return;
-            
-            if (playerSwords.has(playerId)) {
-                const oldSword = playerSwords.get(playerId);
-                op.group.remove(oldSword);
-                playerSwords.delete(playerId);
-            }
-            
-            if (swordType && BLOCK_TYPES[swordType] && BLOCK_TYPES[swordType].isWeapon) {
-                const sword = createSwordMesh(swordType, playerId);
-                if (sword) {
-                    sword.position.set(-0.7, 0.8, 0.2);
-                    sword.scale.set(0.8, 0.8, 1);
-                    
-                    op.group.add(sword);
-                    playerSwords.set(playerId, sword);
+            if (currentSlot && currentSlot.type && BLOCK_TYPES[currentSlot.type]) {
+                const itemData = BLOCK_TYPES[currentSlot.type];
+                
+                if (itemData.isWeapon) {
+                    swordInHand = createSwordMesh(currentSlot.type);
+                    if (swordInHand) {
+                        swordInHand.position.set(-0.4, -0.3, -0.5);
+                        swordInHand.scale.set(1.0, 1.0, 1);
+                        scene.add(swordInHand);
+                    }
+                } else if (itemData.isTool) {
+                    toolInHand = createToolMesh(currentSlot.type);
+                    if (toolInHand) {
+                        toolInHand.position.set(-0.4, -0.3, -0.5);
+                        toolInHand.scale.set(1.0, 1.0, 1);
+                        scene.add(toolInHand);
+                    }
                 }
             }
         }
@@ -1323,6 +1414,30 @@
             return sameBlock && inRange;
         }
 
+        // Calculate break time with tool multipliers
+        function calculateBreakTime(blockType, currentItem) {
+            const baseBreakTime = BLOCK_TYPES[blockType]?.breakTime || 1.0;
+            
+            if (currentItem && BLOCK_TYPES[currentItem.type]?.isTool) {
+                const tool = BLOCK_TYPES[currentItem.type];
+                
+                // Axe breaks glass and wood faster
+                if (tool.toolType === 'axe') {
+                    if (blockType === 'Glass' || blockType === 'Wood') {
+                        return baseBreakTime * tool.breakMultiplier;
+                    }
+                }
+                // Pickaxe breaks stone and obsidian faster
+                else if (tool.toolType === 'pickaxe') {
+                    if (blockType === 'Stone' || blockType === 'Obsidian') {
+                        return baseBreakTime * tool.breakMultiplier;
+                    }
+                }
+            }
+            
+            return baseBreakTime;
+        }
+
         document.addEventListener('keydown', (e) => {
             if (!isFullscreen()) return;
             
@@ -1469,7 +1584,12 @@
                         isBreaking = true;
                         breakingBlock = obj;
                         breakingStartTime = Date.now();
-                        breakingDuration = BLOCK_TYPES[type].breakTime * 1000;
+                        
+                        // Calculate break time with tool multiplier
+                        const currentSlot = inventory[selectedSlotIndex];
+                        const breakTimeMultiplier = calculateBreakTime(type, currentSlot);
+                        breakingDuration = breakTimeMultiplier * 1000;
+                        
                         document.getElementById('break-progress').style.display = 'block';
                         
                         const x = Math.floor(breakingBlock.position.x - 0.5);
@@ -1647,8 +1767,11 @@
         function animate() {
             requestAnimationFrame(animate);
             const time = performance.now();
-            const delta = Math.min((time - prevTime) / 1000, 0.05);
+            const delta = (time - prevTime) / 1000;
             prevTime = time;
+
+            // Update screen shake
+            updateScreenShake(delta);
 
             if (time - lastGeneratorUpdate > 100) {
                 resourceSpawners.forEach(spawner => {
@@ -1948,7 +2071,17 @@
                 }
                 
                 data.group.visible = true;
-                data.group.position.lerp(new THREE.Vector3(data.targetPos.x, data.targetPos.y, data.targetPos.z), 0.15);
+                
+                // FIX: Properly position player model to avoid sinking
+                // The server sends eye position, but we need to position the feet
+                const eyeHeight = data.crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
+                const targetFeetPosition = {
+                    x: data.targetPos.x,
+                    y: data.targetPos.y - eyeHeight + 0.9, // Adjust to place feet correctly
+                    z: data.targetPos.z
+                };
+                
+                data.group.position.lerp(new THREE.Vector3(targetFeetPosition.x, targetFeetPosition.y, targetFeetPosition.z), 0.15);
                 data.group.rotation.y = THREE.MathUtils.lerp(data.group.rotation.y || 0, data.targetRot.yaw, 0.15);
                 data.head.rotation.x = THREE.MathUtils.lerp(data.head.rotation.x || 0, data.targetRot.pitch, 0.15);
                 
@@ -2010,7 +2143,7 @@
             
             selectedSlotIndex = index;
             updateUI();
-            updateSwordInHand();
+            updateEquipmentInHand();
             
             const slot = inventory[selectedSlotIndex];
             const overlay = document.getElementById('item-name-overlay');
@@ -2058,6 +2191,8 @@
                         else if (slot.type === 'Wooden Sword') icon.src = TEXTURE_URLS.woodenSword;
                         else if (slot.type === 'Iron Sword') icon.src = TEXTURE_URLS.ironSword;
                         else if (slot.type === 'Emerald Sword') icon.src = TEXTURE_URLS.emeraldSword;
+                        else if (slot.type === 'Axe') icon.src = TEXTURE_URLS.axe;
+                        else if (slot.type === 'Pickaxe') icon.src = TEXTURE_URLS.pickaxe;
                         div.appendChild(icon);
                     } else {
                         const icon = document.createElement('div');
@@ -2103,10 +2238,19 @@
                 else if (name === 'Wooden Sword') imageUrl = TEXTURE_URLS.woodenSword;
                 else if (name === 'Iron Sword') imageUrl = TEXTURE_URLS.ironSword;
                 else if (name === 'Emerald Sword') imageUrl = TEXTURE_URLS.emeraldSword;
+                else if (name === 'Axe') imageUrl = TEXTURE_URLS.axe;
+                else if (name === 'Pickaxe') imageUrl = TEXTURE_URLS.pickaxe;
                 
                 const costText = Object.entries(data.cost)
                     .map(([res, amt]) => `${amt} ${res}`)
                     .join(' + ');
+                
+                let extraInfo = '';
+                if (data.isWeapon) {
+                    extraInfo = `<br><span style="color:#ff8888; font-size:0.8em;">Damage: ${data.damage}</span>`;
+                } else if (data.isTool) {
+                    extraInfo = `<br><span style="color:#88aaff; font-size:0.8em;">Breaks ${data.toolType === 'axe' ? 'Glass & Wood 2x faster' : 'Stone & Obsidian 2x faster'}</span>`;
+                }
                 
                 item.innerHTML = `
                     ${imageUrl ? `<img src="${imageUrl}" class="shop-icon" alt="${name}">` : 
@@ -2114,7 +2258,7 @@
                     <strong>${name}</strong><br>
                     <span style="font-size:0.9em; color:#aaa;">${data.buyAmount}x</span><br>
                     <span style="color: ${affordable ? '#4d9043' : '#d32f2f'}">${costText}</span>
-                    ${data.isWeapon ? `<br><span style="color:#ff8888; font-size:0.8em;">Damage: ${data.damage}</span>` : ''}
+                    ${extraInfo}
                 `;
                 item.onclick = () => {
                     wasBuying = true;
@@ -2154,17 +2298,18 @@
             const group = new THREE.Group();
             group.name = id;
 
+            // Create player body parts
             const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
             const headMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
             const head = new THREE.Mesh(headGeo, headMat);
-            head.position.y = 1.4;
+            head.position.y = 1.4; // Head is at 1.4 units from feet
             group.add(head);
 
             const bodyGeo = new THREE.BoxGeometry(0.6, 0.8, 0.3);
             const bodyColor = getPlayerColor(id);
             const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
             const body = new THREE.Mesh(bodyGeo, bodyMat);
-            body.position.y = 0.7;
+            body.position.y = 0.7; // Body center at 0.7 units from feet
             group.add(body);
 
             const armGeo = new THREE.BoxGeometry(0.25, 0.8, 0.25);
@@ -2187,6 +2332,7 @@
             rightLeg.position.set(-0.2, 0, 0);
             group.add(rightLeg);
 
+            // Name tag
             const canvas = document.createElement('canvas');
             canvas.width = 256;
             canvas.height = 64;
@@ -2309,11 +2455,12 @@
                 createOtherPlayer(id, health || 10, equippedWeapon);
                 const op = otherPlayers.get(id);
                 
-                // FIX: Convert eye position to feet position by subtracting eye height
+                // FIX: Properly position player model to avoid sinking
+                // The server sends eye position, but we need to position the feet
                 const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
                 op.targetPos = {
                     x: pos.x,
-                    y: pos.y - eyeHeight, // Subtract eye height to get feet position
+                    y: pos.y - eyeHeight + 0.9, // Adjust to place feet correctly
                     z: pos.z
                 };
                 op.targetRot = rot;
@@ -2328,11 +2475,12 @@
             createOtherPlayer(id, health || 10, equippedWeapon);
             const op = otherPlayers.get(id);
             
-            // FIX: Convert eye position to feet position by subtracting eye height
+            // FIX: Properly position player model to avoid sinking
+            // The server sends eye position, but we need to position the feet
             const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
             op.targetPos = {
                 x: pos.x,
-                y: pos.y - eyeHeight, // Subtract eye height to get feet position
+                y: pos.y - eyeHeight + 0.9, // Adjust to place feet correctly
                 z: pos.z
             };
             op.targetRot = rot;
@@ -2350,11 +2498,12 @@
                     op = otherPlayers.get(id);
                 }
                 if (op) {
-                    // FIX: Convert eye position to feet position by subtracting eye height
+                    // FIX: Properly position player model to avoid sinking
+                    // The server sends eye position, but we need to position the feet
                     const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
                     op.targetPos = {
                         x: pos.x,
-                        y: pos.y - eyeHeight, // Subtract eye height to get feet position
+                        y: pos.y - eyeHeight + 0.9, // Adjust to place feet correctly
                         z: pos.z
                     };
                     op.targetRot = rot;
@@ -2401,7 +2550,7 @@
         socket.on('updateInventory', (inv) => {
             inventory = inv;
             updateUI();
-            updateSwordInHand();
+            updateEquipmentInHand();
             wasBuying = false;
         });
         
@@ -2520,7 +2669,7 @@
             inventory = data.inventory;
             currency = data.currency;
             updateUI();
-            updateSwordInHand();
+            updateEquipmentInHand();
         });
 
         socket.on('gameEnd', ({ winner }) => {
@@ -2584,6 +2733,11 @@
                 swordInHand = null;
             }
             
+            if (toolInHand) {
+                scene.remove(toolInHand);
+                toolInHand = null;
+            }
+            
             data.blocks.forEach(({ x, y, z, type }) => {
                 addBlockMesh(x, y, z, type);
             });
@@ -2607,7 +2761,7 @@
             inventory = data.inventory;
             currency = data.currency;
             updateUI();
-            updateSwordInHand();
+            updateEquipmentInHand();
             velocity.set(0, 0, 0);
         });
 
@@ -2635,6 +2789,8 @@
             
             if (targetId === playerId && attackerId) {
                 showNotification(`You were hit! Health: ${newHealth}/10`, 2000);
+                // Trigger screen shake when hit
+                triggerScreenShake(0.4, 0.6);
             }
         });
 
