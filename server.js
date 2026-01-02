@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// Config
+// Config - Updated with Axe and Pickaxe
 const BLOCK_TYPES = {
     'Grass': { color: 0x4d9043, cost: { iron: 5 }, breakTime: 1.2, buyAmount: 8, hasTexture: true },
     'Glass': { color: 0xade8f4, cost: { iron: 5 }, breakTime: 0.4, buyAmount: 16, opacity: 0.6 },
@@ -25,7 +25,9 @@ const BLOCK_TYPES = {
     'Fireball': { color: 0xff5500, cost: { iron: 48 }, buyAmount: 1, isItem: true, hasTexture: true },
     'Wooden Sword': { color: 0x8B4513, cost: { iron: 20 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 2, hasTexture: true },
     'Iron Sword': { color: 0xC0C0C0, cost: { gold: 10 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 3, hasTexture: true },
-    'Emerald Sword': { color: 0x00FF00, cost: { emerald: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 4, hasTexture: true }
+    'Emerald Sword': { color: 0x00FF00, cost: { emerald: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 4, hasTexture: true },
+    'Axe': { color: 0x8B4513, cost: { gold: 20 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'axe', breakMultiplier: 0.5, hasTexture: true },
+    'Pickaxe': { color: 0xC0C0C0, cost: { gold: 20 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'pickaxe', breakMultiplier: 0.5, hasTexture: true }
 };
 const MAX_STACK = 64;
 const INVENTORY_SIZE = 9;
@@ -244,7 +246,8 @@ function assignPlayerToIsland(playerId) {
             
             const p = players.get(playerId);
             p.bedPos = { x: island.bedX, y: island.bedY, z: island.bedZ };
-            p.pos = { x: island.bedX + 0.5, y: island.bedY + 2, z: island.bedZ + 0.5 };
+            // Send eye position (feet + eye height)
+            p.pos = { x: island.bedX + 0.5, y: island.bedY + 2 + 1.6, z: island.bedZ + 0.5 };
             p.rot = { yaw: 0, pitch: 0 };
             p.spectator = false;
             p.health = PLAYER_MAX_HEALTH;
@@ -476,8 +479,9 @@ function validateBlockBreaking(playerId, x, y, z, type) {
     const blockType = blocks.get(key);
     if (blockType !== type) return false;
     
+    // Calculate distance from player's eye position to block
     const eyeHeight = p.crouch ? 1.3 : 1.6;
-    const playerEyeY = p.pos.y - eyeHeight;
+    const playerEyeY = p.pos.y;
     const blockCenterY = y + 0.5;
     
     const dist = Math.hypot(
@@ -666,7 +670,7 @@ io.on('connection', (socket) => {
         }
         
         const eyeHeight = p.crouch ? 1.3 : 1.6;
-        const playerEyeY = p.pos.y - eyeHeight;
+        const playerEyeY = p.pos.y;
         const blockCenterY = y + 0.5;
         
         const dist = Math.hypot(
@@ -780,7 +784,7 @@ io.on('connection', (socket) => {
             if (hasBed) {
                 target.health = PLAYER_MAX_HEALTH;
                 target.pos.x = target.bedPos.x + 0.5;
-                target.pos.y = target.bedPos.y + 2;
+                target.pos.y = target.bedPos.y + 2 + 1.6; // Eye position
                 target.pos.z = target.bedPos.z + 0.5;
                 target.rot.yaw = 0;
                 target.rot.pitch = 0;
@@ -832,7 +836,7 @@ io.on('connection', (socket) => {
         
         const startPos = {
             x: p.pos.x,
-            y: p.pos.y + (p.crouch ? 1.3 : 1.6),
+            y: p.pos.y,
             z: p.pos.z
         };
         
@@ -904,7 +908,7 @@ io.on('connection', (socket) => {
         
         const startPos = {
             x: p.pos.x,
-            y: p.pos.y + (p.crouch ? 1.3 : 1.6),
+            y: p.pos.y,
             z: p.pos.z
         };
         
@@ -1353,7 +1357,7 @@ setInterval(() => {
                 
                 if (hasBed) {
                     p.pos.x = p.bedPos.x + 0.5;
-                    p.pos.y = p.bedPos.y + 2;
+                    p.pos.y = p.bedPos.y + 2 + 1.6; // Eye position
                     p.pos.z = p.bedPos.z + 0.5;
                     p.rot.yaw = 0;
                     p.rot.pitch = 0;
