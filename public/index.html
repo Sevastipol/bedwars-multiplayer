@@ -1832,7 +1832,7 @@
                 
                 else if (currentSlot && currentSlot.type === 'Wind Charge' && currentSlot.count > 0) {
                     const now = Date.now();
-                    if (now - lastWindchargeThrow < 100) {
+                    if (now - lastWindchargeThrow < 10) {
                         socket.emit('notification', 'Wind Charge cooldown!');
                         return;
                     }
