@@ -1608,7 +1608,7 @@ setInterval(() => {
             
             const prevPos = { ...windcharge.pos };
             
-            const GRAVITY = 8;
+            const GRAVITY = 2;
             windcharge.velocity.y -= GRAVITY * deltaTime;
             
             windcharge.pos.x += windcharge.velocity.x * deltaTime;
@@ -1648,7 +1648,7 @@ setInterval(() => {
                     // Minecraft-style wind charge explosion - knocks back players but doesn't break blocks
                     const explosionPos = { x: hitBlock.x + 0.5, y: hitBlock.y + 0.5, z: hitBlock.z + 0.5 };
                     const explosionRadius = 4;
-                    const explosionForce = 0.8; // Reduced force for better balance
+                    const explosionForce = 4; // Reduced force for better balance
                     
                     players.forEach((player, playerId) => {
                         if (player.spectator) return;
