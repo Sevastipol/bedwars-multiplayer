@@ -509,7 +509,7 @@ function processBlockBreak(playerId, x, y, z) {
     return false;
 }
 
-// ==================== IMPROVED KNOCKBACK SYSTEM ====================
+// ==================== FIXED KNOCKBACK SYSTEM ====================
 
 function applyKnockback(target, sourcePos, force, upwardBoost = 0.3, overrideY = false) {
     // Calculate direction from source to target
@@ -542,6 +542,24 @@ function applyKnockback(target, sourcePos, force, upwardBoost = 0.3, overrideY =
     }
     
     console.log(`Knockback applied: force=${force}, pos change: x=${normalizedX * force}, y=${upwardBoost}, z=${normalizedZ * force}`);
+    
+    // CRITICAL FIX: Send immediate position update to the client
+    io.to(target.id).emit('teleport', {
+        x: target.pos.x,
+        y: target.pos.y,
+        z: target.pos.z
+    });
+    
+    // Also broadcast to other players
+    io.emit('playersUpdate', Array.from(players.entries()).map(([id, p]) => ({
+        id,
+        pos: p.pos,
+        rot: p.rot,
+        crouch: p.crouch,
+        spectator: p.spectator,
+        health: p.health,
+        equippedWeapon: p.equippedWeapon
+    })));
 }
 
 function applyExplosionKnockback(target, explosionPos, radius, force) {
@@ -567,9 +585,27 @@ function applyExplosionKnockback(target, explosionPos, radius, force) {
     target.pos.z += normalizedZ * actualForce;
     
     console.log(`Explosion knockback: force=${actualForce}, distanceFactor=${distanceFactor}`);
+    
+    // CRITICAL FIX: Send immediate position update to the client
+    io.to(target.id).emit('teleport', {
+        x: target.pos.x,
+        y: target.pos.y,
+        z: target.pos.z
+    });
+    
+    // Also broadcast to other players
+    io.emit('playersUpdate', Array.from(players.entries()).map(([id, p]) => ({
+        id,
+        pos: p.pos,
+        rot: p.rot,
+        crouch: p.crouch,
+        spectator: p.spectator,
+        health: p.health,
+        equippedWeapon: p.equippedWeapon
+    })));
 }
 
-// ==================== END IMPROVED KNOCKBACK SYSTEM ====================
+// ==================== END FIXED KNOCKBACK SYSTEM ====================
 
 // Socket connections
 io.on('connection', (socket) => {
@@ -851,7 +887,7 @@ io.on('connection', (socket) => {
         target.health -= damage;
         attacker.lastHitTime = now;
         
-        // Apply knockback for sword hits
+        // Apply knockback for sword hits - FIXED: Now sends teleport event
         applyKnockback(target, attacker.pos, 1.5, 0.4);
         
         io.emit('playerHit', {
@@ -874,9 +910,11 @@ io.on('connection', (socket) => {
                 target.rot.yaw = 0;
                 target.rot.pitch = 0;
                 
-                io.to(targetId).emit('respawn', { 
-                    pos: target.pos, 
-                    rot: target.rot 
+                // Send teleport for respawn
+                io.to(targetId).emit('teleport', {
+                    x: target.pos.x,
+                    y: target.pos.y,
+                    z: target.pos.z
                 });
                 
                 io.emit('playerHit', {
@@ -1114,7 +1152,7 @@ io.on('connection', (socket) => {
         players.forEach((player, playerId) => {
             if (player.spectator) return;
             
-            // Apply explosion knockback
+            // Apply explosion knockback - FIXED: Now sends teleport event
             applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
             
             io.to(playerId).emit('notification', 'Knocked back by fireball!');
@@ -1347,6 +1385,7 @@ setInterval(() => {
                     player.pos.y = teleportY;
                     player.pos.z = safePos.z;
                     
+                    // Send teleport event for enderpearl
                     io.to(pearl.owner).emit('teleport', {
                         x: player.pos.x,
                         y: player.pos.y,
