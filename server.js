@@ -356,7 +356,7 @@ function resetGame() {
         p.lastEnderpearlThrow = 0;
         p.lastFireballThrow = 0;
         p.lastWindchargeThrow = 0;
-        p.lastTeleportTime = 0; // NEW: Track when player was last teleported
+        p.knockbackImmuneUntil = 0;
         
         io.to(id).emit('setSpectator', true);
         io.to(id).emit('respawn', {
@@ -454,7 +454,6 @@ function startPlayerCheck() {
                 }, 1000);
             }
         } else {
-            // Check win condition during active game
             checkWinCondition();
         }
     }, 1000);
@@ -510,63 +509,51 @@ function processBlockBreak(playerId, x, y, z) {
     return false;
 }
 
-// ==================== FIXED KNOCKBACK SYSTEM ====================
-
 function applyKnockback(target, sourcePos, force, upwardBoost = 0.3, overrideY = false) {
-    // Calculate direction from source to target
+    const now = Date.now();
+    
+    if (now < target.knockbackImmuneUntil) {
+        return;
+    }
+    
+    target.knockbackImmuneUntil = now + 500;
+    
     let dx = target.pos.x - sourcePos.x;
     let dy = target.pos.y - sourcePos.y;
     let dz = target.pos.z - sourcePos.z;
     
-    // If horizontal distance is 0, apply random direction to prevent NaN
     if (Math.abs(dx) < 0.001 && Math.abs(dz) < 0.001) {
         dx = (Math.random() - 0.5) * 0.1;
         dz = (Math.random() - 0.5) * 0.1;
     }
     
-    // Calculate horizontal distance
     const horizontalDist = Math.sqrt(dx * dx + dz * dz);
     
-    // Normalize horizontal direction
     const normalizedX = dx / horizontalDist;
     const normalizedZ = dz / horizontalDist;
     
-    // Apply knockback with horizontal force
-    target.pos.x += normalizedX * force;
-    target.pos.z += normalizedZ * force;
+    const newPos = {
+        x: target.pos.x + normalizedX * force,
+        y: target.pos.y + (overrideY ? upwardBoost : Math.max(upwardBoost, Math.abs(dy) * 0.3)),
+        z: target.pos.z + normalizedZ * force
+    };
     
-    // Apply upward boost
-    if (overrideY) {
-        target.pos.y += upwardBoost;
-    } else {
-        target.pos.y += Math.max(upwardBoost, Math.abs(dy) * 0.3);
-    }
+    target.pos = newPos;
     
     console.log(`Knockback applied: force=${force}, pos change: x=${normalizedX * force}, y=${upwardBoost}, z=${normalizedZ * force}`);
     
-    // Set teleport time to prevent client position override
-    target.lastTeleportTime = Date.now();
-    
-    // CRITICAL FIX: Send immediate position update to the client
-    io.to(target.id).emit('teleport', {
-        x: target.pos.x,
-        y: target.pos.y,
-        z: target.pos.z
-    });
-    
-    // Also broadcast to other players
-    io.emit('playersUpdate', Array.from(players.entries()).map(([id, p]) => ({
-        id,
-        pos: p.pos,
-        rot: p.rot,
-        crouch: p.crouch,
-        spectator: p.spectator,
-        health: p.health,
-        equippedWeapon: p.equippedWeapon
-    })));
+    io.to(target.id).emit('teleport', newPos);
 }
 
 function applyExplosionKnockback(target, explosionPos, radius, force) {
+    const now = Date.now();
+    
+    if (now < target.knockbackImmuneUntil) {
+        return;
+    }
+    
+    target.knockbackImmuneUntil = now + 500;
+    
     const dx = target.pos.x - explosionPos.x;
     const dy = target.pos.y - explosionPos.y;
     const dz = target.pos.z - explosionPos.z;
@@ -574,47 +561,26 @@ function applyExplosionKnockback(target, explosionPos, radius, force) {
     
     if (distance === 0 || distance > radius) return;
     
-    // Calculate force based on distance (closer = stronger)
     const distanceFactor = 1 - (distance / radius);
     const actualForce = force * distanceFactor;
     
-    // Normalize direction
     const normalizedX = dx / distance;
     const normalizedY = dy / distance;
     const normalizedZ = dz / distance;
     
-    // Apply knockback
-    target.pos.x += normalizedX * actualForce;
-    target.pos.y += Math.max(normalizedY * actualForce, 0.3); // Always some upward boost
-    target.pos.z += normalizedZ * actualForce;
+    const newPos = {
+        x: target.pos.x + normalizedX * actualForce,
+        y: target.pos.y + Math.max(normalizedY * actualForce, 0.3),
+        z: target.pos.z + normalizedZ * actualForce
+    };
+    
+    target.pos = newPos;
     
     console.log(`Explosion knockback: force=${actualForce}, distanceFactor=${distanceFactor}`);
     
-    // Set teleport time to prevent client position override
-    target.lastTeleportTime = Date.now();
-    
-    // CRITICAL FIX: Send immediate position update to the client
-    io.to(target.id).emit('teleport', {
-        x: target.pos.x,
-        y: target.pos.y,
-        z: target.pos.z
-    });
-    
-    // Also broadcast to other players
-    io.emit('playersUpdate', Array.from(players.entries()).map(([id, p]) => ({
-        id,
-        pos: p.pos,
-        rot: p.rot,
-        crouch: p.crouch,
-        spectator: p.spectator,
-        health: p.health,
-        equippedWeapon: p.equippedWeapon
-    })));
+    io.to(target.id).emit('teleport', newPos);
 }
 
-// ==================== END FIXED KNOCKBACK SYSTEM ====================
-
-// Socket connections
 io.on('connection', (socket) => {
     console.log(`New connection: ${socket.id}`);
     
@@ -635,7 +601,7 @@ io.on('connection', (socket) => {
         lastEnderpearlThrow: 0,
         lastFireballThrow: 0,
         lastWindchargeThrow: 0,
-        lastTeleportTime: 0 // NEW: Track when player was last teleported
+        knockbackImmuneUntil: 0
     };
     
     players.set(socket.id, playerState);
@@ -695,11 +661,7 @@ io.on('connection', (socket) => {
     socket.on('playerUpdate', (data) => {
         const p = players.get(socket.id);
         if (p) {
-            const now = Date.now();
-            
-            // If player was teleported recently (within 100ms), ignore position update from client
-            // This prevents the client from overriding server-controlled positions after knockback
-            if (now - p.lastTeleportTime > 100) {
+            if (Date.now() >= p.knockbackImmuneUntil) {
                 p.pos = data.pos;
             }
             p.rot = data.rot;
@@ -759,7 +721,6 @@ io.on('connection', (socket) => {
         const p = players.get(socket.id);
         if (p.spectator) return;
         
-        // Prevent placing items (tools, weapons, throwables)
         const blockData = BLOCK_TYPES[type];
         if (blockData && (blockData.isItem || blockData.isWeapon || blockData.isTool)) {
             socket.emit('revertPlace', { x, y, z });
@@ -806,7 +767,6 @@ io.on('connection', (socket) => {
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
     });
 
-    // Q key - Drop item from inventory
     socket.on('dropItem', () => {
         const p = players.get(socket.id);
         if (p.spectator || !p.inventory[p.selected]) return;
@@ -814,22 +774,18 @@ io.on('connection', (socket) => {
         const slot = p.inventory[p.selected];
         if (!slot) return;
         
-        // Remove one item from the slot
         slot.count--;
         
         if (slot.count <= 0) {
             p.inventory[p.selected] = null;
             
-            // Clear equipped weapon if it was dropped
             if (BLOCK_TYPES[slot.type] && BLOCK_TYPES[slot.type].isWeapon) {
                 p.equippedWeapon = null;
             }
         }
         
-        // Emit inventory update
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
         
-        // Emit notification
         socket.emit('notification', `Dropped ${slot.type}`);
     });
 
@@ -901,7 +857,6 @@ io.on('connection', (socket) => {
         target.health -= damage;
         attacker.lastHitTime = now;
         
-        // Apply knockback for sword hits - FIXED: Now sends teleport event
         applyKnockback(target, attacker.pos, 1.5, 0.4);
         
         io.emit('playerHit', {
@@ -919,13 +874,11 @@ io.on('connection', (socket) => {
             if (hasBed) {
                 target.health = PLAYER_MAX_HEALTH;
                 target.pos.x = target.bedPos.x + 0.5;
-                target.pos.y = target.bedPos.y + 2 + 1.6; // Eye position
+                target.pos.y = target.bedPos.y + 2 + 1.6;
                 target.pos.z = target.bedPos.z + 0.5;
                 target.rot.yaw = 0;
                 target.rot.pitch = 0;
-                target.lastTeleportTime = Date.now(); // NEW: Set teleport time
                 
-                // Send teleport for respawn
                 io.to(targetId).emit('teleport', {
                     x: target.pos.x,
                     y: target.pos.y,
@@ -1159,7 +1112,6 @@ io.on('connection', (socket) => {
         const fireball = fireballs.get(fireballId);
         if (!fireball) return;
         
-        // Fireball explosion deals 0 damage, just knocks back players
         const explosionPos = { x: x + 0.5, y: y + 0.5, z: z + 0.5 };
         const explosionRadius = 3;
         const explosionForce = 3;
@@ -1167,7 +1119,6 @@ io.on('connection', (socket) => {
         players.forEach((player, playerId) => {
             if (player.spectator) return;
             
-            // Apply explosion knockback - FIXED: Now sends teleport event
             applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
             
             io.to(playerId).emit('notification', 'Knocked back by fireball!');
@@ -1275,11 +1226,9 @@ io.on('connection', (socket) => {
         
         const p = players.get(socket.id);
         if (p) {
-            // Remove player from game
             players.delete(socket.id);
             io.emit('removePlayer', socket.id);
             
-            // Clean up breaking animations
             if (breakingAnimations.has(socket.id)) {
                 const anim = breakingAnimations.get(socket.id);
                 socket.broadcast.emit('stopBreaking', {
@@ -1291,7 +1240,6 @@ io.on('connection', (socket) => {
                 breakingAnimations.delete(socket.id);
             }
             
-            // If player had a bed, remove it
             if (p.bedPos) {
                 removeBlock(p.bedPos.x, p.bedPos.y, p.bedPos.z);
                 
@@ -1308,7 +1256,6 @@ io.on('connection', (socket) => {
                 }
             }
             
-            // If game is active and this player was active, check win condition
             if (gameActive && !p.spectator) {
                 console.log(`Active player disconnected. Checking win condition...`);
                 checkWinCondition();
@@ -1316,7 +1263,6 @@ io.on('connection', (socket) => {
             
             updateWaitingMessages();
             
-            // Cancel countdown if not enough players
             if (!gameActive && countdownTimer) {
                 const activePlayers = getActivePlayers();
                 if (activePlayers.length < REQUIRED_PLAYERS) {
@@ -1331,7 +1277,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// Game loop
 setInterval(() => {
     const now = Date.now();
     
@@ -1353,7 +1298,6 @@ setInterval(() => {
             suddenDeath = true;
         }
 
-        // Enderpearl updates
         const pearlUpdates = [];
         const pearlRemovals = [];
         
@@ -1399,9 +1343,7 @@ setInterval(() => {
                     player.pos.x = safePos.x;
                     player.pos.y = teleportY;
                     player.pos.z = safePos.z;
-                    player.lastTeleportTime = now; // NEW: Set teleport time
                     
-                    // Send teleport event for enderpearl
                     io.to(pearl.owner).emit('teleport', {
                         x: player.pos.x,
                         y: player.pos.y,
@@ -1435,7 +1377,6 @@ setInterval(() => {
             io.emit('removeEnderpearl', id);
         });
 
-        // Fireball updates - Direct hit does 6 damage + knockback, explosion only knockback
         const fireballUpdates = [];
         const fireballRemovals = [];
         
@@ -1454,15 +1395,14 @@ setInterval(() => {
             fireball.pos.y += fireball.velocity.y * deltaTime;
             fireball.pos.z += fireball.velocity.z * deltaTime;
             
-            // Check for direct player hit (check if fireball touches any part of player model)
             let directHitPlayer = null;
-            const playerHitRadius = 1.0; // Player hit radius for direct hit
+            const playerHitRadius = 1.0;
             
             players.forEach((player, playerId) => {
                 if (player.spectator || playerId === fireball.owner) return;
                 
                 const dx = fireball.pos.x - player.pos.x;
-                const dy = fireball.pos.y - (player.pos.y - 0.9); // Adjust for player height
+                const dy = fireball.pos.y - (player.pos.y - 0.9);
                 const dz = fireball.pos.z - player.pos.z;
                 const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
                 
@@ -1472,10 +1412,8 @@ setInterval(() => {
             });
             
             if (directHitPlayer) {
-                // Direct hit - deal 6 damage
                 directHitPlayer.player.health -= 6;
                 
-                // Apply strong knockback from direct hit (8 blocks)
                 applyKnockback(directHitPlayer.player, fireball.pos, 8.0, 1.5, true);
                 
                 io.emit('playerHit', {
@@ -1492,7 +1430,6 @@ setInterval(() => {
                     io.to(directHitPlayer.id).emit('notification', 'Direct fireball hit! -6 damage');
                 }
                 
-                // Create explosion at hit location
                 const explosionX = Math.floor(fireball.pos.x);
                 const explosionY = Math.floor(fireball.pos.y);
                 const explosionZ = Math.floor(fireball.pos.z);
@@ -1526,7 +1463,6 @@ setInterval(() => {
                     }
                 }
                 
-                // Apply explosion knockback to nearby players (including the direct hit player)
                 const explosionPos = { x: explosionX + 0.5, y: explosionY + 0.5, z: explosionZ + 0.5 };
                 const explosionRadius = 3;
                 const explosionForce = 3;
@@ -1552,7 +1488,6 @@ setInterval(() => {
                 fireball.arrived = true;
                 fireballRemovals.push(id);
             } else {
-                // No direct hit, check for block collision
                 const dx = fireball.pos.x - prevPos.x;
                 const dy = fireball.pos.y - prevPos.y;
                 const dz = fireball.pos.z - prevPos.z;
@@ -1582,7 +1517,6 @@ setInterval(() => {
                     if (hitBlock) {
                         fireball.hit = true;
                         
-                        // Fireball explosion deals 0 damage, just knocks back players
                         const explosionPos = { x: hitBlock.x + 0.5, y: hitBlock.y + 0.5, z: hitBlock.z + 0.5 };
                         const explosionRadius = 3;
                         const explosionForce = 3;
@@ -1667,7 +1601,6 @@ setInterval(() => {
             io.emit('removeFireball', id);
         });
 
-        // Wind Charge updates - Minecraft style (knockback only, no damage)
         const windchargeUpdates = [];
         const windchargeRemovals = [];
         
@@ -1686,15 +1619,14 @@ setInterval(() => {
             windcharge.pos.y += windcharge.velocity.y * deltaTime;
             windcharge.pos.z += windcharge.velocity.z * deltaTime;
             
-            // Check for direct player hit first
             let directHitPlayer = null;
-            const playerHitRadius = 1.0; // Player hit radius for direct hit
+            const playerHitRadius = 1.0;
             
             players.forEach((player, playerId) => {
                 if (player.spectator || playerId === windcharge.owner) return;
                 
                 const dx = windcharge.pos.x - player.pos.x;
-                const dy = windcharge.pos.y - (player.pos.y - 0.9); // Adjust for player height
+                const dy = windcharge.pos.y - (player.pos.y - 0.9);
                 const dz = windcharge.pos.z - player.pos.z;
                 const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
                 
@@ -1706,13 +1638,11 @@ setInterval(() => {
             if (directHitPlayer) {
                 windcharge.hit = true;
                 
-                // Direct hit - 8 blocks knockback
                 applyKnockback(directHitPlayer.player, windcharge.pos, 8.0, 1.5, true);
                 
                 io.to(directHitPlayer.id).emit('notification', 'Direct wind charge hit!');
                 console.log(`Wind charge direct hit: ${directHitPlayer.id} - 8 blocks knockback`);
                 
-                // Create explosion effect
                 const explosionX = Math.floor(windcharge.pos.x);
                 const explosionY = Math.floor(windcharge.pos.y);
                 const explosionZ = Math.floor(windcharge.pos.z);
@@ -1726,7 +1656,6 @@ setInterval(() => {
                 windcharge.arrived = true;
                 windchargeRemovals.push(id);
             } else {
-                // No direct hit, check for block collisions
                 const dx = windcharge.pos.x - prevPos.x;
                 const dy = windcharge.pos.y - prevPos.y;
                 const dz = windcharge.pos.z - prevPos.z;
@@ -1756,10 +1685,9 @@ setInterval(() => {
                     if (hitBlock) {
                         windcharge.hit = true;
                         
-                        // Wind charge explosion - knocks back players 4 blocks
                         const explosionPos = { x: hitBlock.x + 0.5, y: hitBlock.y + 0.5, z: hitBlock.z + 0.5 };
                         const explosionRadius = 4;
-                        const explosionForce = 4; // 4 blocks knockback
+                        const explosionForce = 4;
                         
                         players.forEach((player, playerId) => {
                             if (player.spectator) return;
@@ -1769,7 +1697,6 @@ setInterval(() => {
                             io.to(playerId).emit('notification', 'Wind charge explosion!');
                         });
                         
-                        // Visual explosion effect
                         io.emit('windchargeExplosion', {
                             x: hitBlock.x,
                             y: hitBlock.y,
@@ -1841,11 +1768,10 @@ setInterval(() => {
                 
                 if (hasBed) {
                     p.pos.x = p.bedPos.x + 0.5;
-                    p.pos.y = p.bedPos.y + 2 + 1.6; // Eye position
+                    p.pos.y = p.bedPos.y + 2 + 1.6;
                     p.pos.z = p.bedPos.z + 0.5;
                     p.rot.yaw = 0;
                     p.rot.pitch = 0;
-                    p.lastTeleportTime = now; // NEW: Set teleport time
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
                     io.to(id).emit('notification', 'You fell into the void and respawned at your bed!');
                 } else {
@@ -1855,7 +1781,6 @@ setInterval(() => {
             }
         });
         
-        // Check win condition more frequently
         if (Math.random() < 0.2) {
             checkWinCondition();
         }
