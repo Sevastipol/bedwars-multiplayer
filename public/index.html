@@ -432,7 +432,6 @@
         let lastEnderpearlThrow = 0;
         let lastFireballThrow = 0;
         let lastWindchargeThrow = 0;
-        let knockbackImmunityUntil = 0; // Added: Prevents position override after teleport
 
         // --- Screen Shake Variables ---
         let screenShakeIntensity = 0;
@@ -1879,7 +1878,20 @@
                     const blockZ = Math.floor(pos.z);
 
                     let canPlace = true;
+                    
+                    // Check if player is trying to place on the block they're standing on
                     const playerFeetY = camera.position.y - currentEyeHeight;
+                    const playerFeetBlockY = Math.floor(playerFeetY);
+                    const playerFeetBlockX = Math.floor(camera.position.x);
+                    const playerFeetBlockZ = Math.floor(camera.position.z);
+                    
+                    // Prevent placing on the exact block you're standing on
+                    if (blockX === playerFeetBlockX && blockY === playerFeetBlockY && blockZ === playerFeetBlockZ) {
+                        canPlace = false;
+                        socket.emit('notification', 'Cannot place block where you are standing!');
+                    }
+                    
+                    // Original collision check
                     const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
                     const blockMinY = blockY;
                     const blockMaxY = blockY + 1;
@@ -2917,9 +2929,6 @@
         });
 
         socket.on('teleport', (data) => {
-            // Set knockback immunity to prevent position override
-            knockbackImmunityUntil = Date.now() + 100; // 100ms immunity
-            
             camera.position.set(data.x, data.y, data.z);
             velocity.set(0, 0, 0);
             showNotification('Teleported!', 1500);
