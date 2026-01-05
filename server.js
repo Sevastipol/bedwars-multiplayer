@@ -27,8 +27,8 @@ const BLOCK_TYPES = {
     'Wooden Sword': { color: 0x8B4513, cost: { iron: 20 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 2, hasTexture: true },
     'Iron Sword': { color: 0xC0C0C0, cost: { gold: 10 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 3, hasTexture: true },
     'Emerald Sword': { color: 0x00FF00, cost: { emerald: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 4, hasTexture: true },
-    'Axe': { color: 0x8B4513, cost: { gold: 20 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'axe', breakMultiplier: 0.5, hasTexture: true },
-    'Pickaxe': { color: 0xC0C0C0, cost: { gold: 20 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'pickaxe', breakMultiplier: 0.5, hasTexture: true }
+    'Axe': { color: 0x8B4513, cost: { gold: 5 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'axe', breakMultiplier: 0.5, hasTexture: true },
+    'Pickaxe': { color: 0xC0C0C0, cost: { gold: 5 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'pickaxe', breakMultiplier: 0.5, hasTexture: true }
 };
 const MAX_STACK = 64;
 const INVENTORY_SIZE = 9;
@@ -356,6 +356,7 @@ function resetGame() {
         p.lastEnderpearlThrow = 0;
         p.lastFireballThrow = 0;
         p.lastWindchargeThrow = 0;
+        p.lastTeleportTime = 0; // NEW: Track when player was last teleported
         
         io.to(id).emit('setSpectator', true);
         io.to(id).emit('respawn', {
@@ -543,6 +544,9 @@ function applyKnockback(target, sourcePos, force, upwardBoost = 0.3, overrideY =
     
     console.log(`Knockback applied: force=${force}, pos change: x=${normalizedX * force}, y=${upwardBoost}, z=${normalizedZ * force}`);
     
+    // Set teleport time to prevent client position override
+    target.lastTeleportTime = Date.now();
+    
     // CRITICAL FIX: Send immediate position update to the client
     io.to(target.id).emit('teleport', {
         x: target.pos.x,
@@ -586,6 +590,9 @@ function applyExplosionKnockback(target, explosionPos, radius, force) {
     
     console.log(`Explosion knockback: force=${actualForce}, distanceFactor=${distanceFactor}`);
     
+    // Set teleport time to prevent client position override
+    target.lastTeleportTime = Date.now();
+    
     // CRITICAL FIX: Send immediate position update to the client
     io.to(target.id).emit('teleport', {
         x: target.pos.x,
@@ -627,7 +634,8 @@ io.on('connection', (socket) => {
         equippedWeapon: null,
         lastEnderpearlThrow: 0,
         lastFireballThrow: 0,
-        lastWindchargeThrow: 0
+        lastWindchargeThrow: 0,
+        lastTeleportTime: 0 // NEW: Track when player was last teleported
     };
     
     players.set(socket.id, playerState);
@@ -687,7 +695,13 @@ io.on('connection', (socket) => {
     socket.on('playerUpdate', (data) => {
         const p = players.get(socket.id);
         if (p) {
-            p.pos = data.pos;
+            const now = Date.now();
+            
+            // If player was teleported recently (within 100ms), ignore position update from client
+            // This prevents the client from overriding server-controlled positions after knockback
+            if (now - p.lastTeleportTime > 100) {
+                p.pos = data.pos;
+            }
             p.rot = data.rot;
             p.crouch = data.crouch;
             p.selected = data.selected;
@@ -909,6 +923,7 @@ io.on('connection', (socket) => {
                 target.pos.z = target.bedPos.z + 0.5;
                 target.rot.yaw = 0;
                 target.rot.pitch = 0;
+                target.lastTeleportTime = Date.now(); // NEW: Set teleport time
                 
                 // Send teleport for respawn
                 io.to(targetId).emit('teleport', {
@@ -1384,6 +1399,7 @@ setInterval(() => {
                     player.pos.x = safePos.x;
                     player.pos.y = teleportY;
                     player.pos.z = safePos.z;
+                    player.lastTeleportTime = now; // NEW: Set teleport time
                     
                     // Send teleport event for enderpearl
                     io.to(pearl.owner).emit('teleport', {
@@ -1829,6 +1845,7 @@ setInterval(() => {
                     p.pos.z = p.bedPos.z + 0.5;
                     p.rot.yaw = 0;
                     p.rot.pitch = 0;
+                    p.lastTeleportTime = now; // NEW: Set teleport time
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
                     io.to(id).emit('notification', 'You fell into the void and respawned at your bed!');
                 } else {
