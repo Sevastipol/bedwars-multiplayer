@@ -347,6 +347,7 @@ function resetGame() {
         p.selected = 0;
         p.rot = { yaw: 0, pitch: 0 };
         p.crouch = false;
+        p.lastRespawn = 0;
         p.bedPos = null;
         p.spectator = true;
         p.health = PLAYER_MAX_HEALTH;
@@ -574,6 +575,7 @@ io.on('connection', (socket) => {
         currency: { iron: 0, gold: 0, emerald: 0 },
         selected: 0,
         bedPos: null,
+        lastRespawn: 0,
         spectator: true,
         health: PLAYER_MAX_HEALTH,
         id: socket.id,
@@ -731,18 +733,6 @@ io.on('connection', (socket) => {
         if (dist > 5.5) {
             socket.emit('revertPlace', { x, y, z });
             socket.emit('notification', 'Too far away!');
-            return;
-        }
-        
-        // Check if player is trying to place on the block they're standing on
-        const playerFeetY = p.pos.y - eyeHeight;
-        const playerFeetBlockY = Math.floor(playerFeetY);
-        const playerFeetBlockX = Math.floor(p.pos.x);
-        const playerFeetBlockZ = Math.floor(p.pos.z);
-        
-        if (x === playerFeetBlockX && y === playerFeetBlockY && z === playerFeetBlockZ) {
-            socket.emit('revertPlace', { x, y, z });
-            socket.emit('notification', 'Cannot place block where you are standing!');
             return;
         }
         
@@ -1752,7 +1742,7 @@ setInterval(() => {
         players.forEach((p, id) => {
             if (p.spectator) return;
             
-            if (p.pos.y < -30) {
+            if (p.pos.y < -30 && now - p.lastRespawn > 2000) {
                 const bedKey = p.bedPos ? blockKey(p.bedPos.x, p.bedPos.y, p.bedPos.z) : null;
                 const hasBed = p.bedPos && blocks.get(bedKey) === 'Bed';
                 
@@ -1767,6 +1757,7 @@ setInterval(() => {
                 } else {
                     eliminatePlayer(id, null);
                 }
+                p.lastRespawn = now;
             }
         });
         
