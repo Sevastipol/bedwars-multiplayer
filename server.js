@@ -582,8 +582,8 @@ io.on('connection', (socket) => {
         lastHitTime: 0,
         equippedWeapon: null,
         lastEnderpearlThrow: 0,
-        lastFireballThrow: 0,
-        lastWindchargeThrow: 0
+        lastFireballThrow = 0,
+        lastWindchargeThrow = 0
     };
     
     players.set(socket.id, playerState);
@@ -852,7 +852,9 @@ io.on('connection', (socket) => {
             const hasBed = target.bedPos && blocks.get(bedKey) === 'Bed';
             
             if (hasBed) {
-                target.health = PLAYER_MAX_HEALTH;
+                // RESTORE HEALTH TO 10 WHEN RESPAWNING FROM DEATH
+                target.health = PLAYER_MAX_HEALTH; // This is 10
+                
                 target.pos.x = target.bedPos.x + 0.5;
                 target.pos.y = target.bedPos.y + 2 + 1.6;
                 target.pos.z = target.bedPos.z + 0.5;
@@ -871,7 +873,7 @@ io.on('connection', (socket) => {
                     newHealth: target.health
                 });
                 
-                io.to(targetId).emit('notification', 'You died and respawned at your bed!');
+                io.to(targetId).emit('notification', 'You died and respawned at your bed! Health restored to 10!');
             } else {
                 eliminatePlayer(targetId, attacker.id);
             }
@@ -1405,7 +1407,36 @@ setInterval(() => {
                 console.log(`Fireball direct hit: ${directHitPlayer.id} hit for 6 damage`);
                 
                 if (directHitPlayer.player.health <= 0) {
-                    eliminatePlayer(directHitPlayer.id, fireball.owner);
+                    const bedKey = directHitPlayer.player.bedPos ? 
+                        blockKey(directHitPlayer.player.bedPos.x, directHitPlayer.player.bedPos.y, directHitPlayer.player.bedPos.z) : null;
+                    const hasBed = directHitPlayer.player.bedPos && blocks.get(bedKey) === 'Bed';
+                    
+                    if (hasBed) {
+                        // RESTORE HEALTH TO 10 WHEN RESPAWNING FROM FIREBALL DEATH
+                        directHitPlayer.player.health = PLAYER_MAX_HEALTH; // This is 10
+                        
+                        directHitPlayer.player.pos.x = directHitPlayer.player.bedPos.x + 0.5;
+                        directHitPlayer.player.pos.y = directHitPlayer.player.bedPos.y + 2 + 1.6;
+                        directHitPlayer.player.pos.z = directHitPlayer.player.bedPos.z + 0.5;
+                        directHitPlayer.player.rot.yaw = 0;
+                        directHitPlayer.player.rot.pitch = 0;
+                        
+                        io.to(directHitPlayer.id).emit('teleport', {
+                            x: directHitPlayer.player.pos.x,
+                            y: directHitPlayer.player.pos.y,
+                            z: directHitPlayer.player.pos.z
+                        });
+                        
+                        io.emit('playerHit', {
+                            attackerId: fireball.owner,
+                            targetId: directHitPlayer.id,
+                            newHealth: directHitPlayer.player.health
+                        });
+                        
+                        io.to(directHitPlayer.id).emit('notification', 'You died from a fireball and respawned at your bed! Health restored to 10!');
+                    } else {
+                        eliminatePlayer(directHitPlayer.id, fireball.owner);
+                    }
                 } else {
                     io.to(directHitPlayer.id).emit('notification', 'Direct fireball hit! -6 damage');
                 }
@@ -1747,13 +1778,24 @@ setInterval(() => {
                 const hasBed = p.bedPos && blocks.get(bedKey) === 'Bed';
                 
                 if (hasBed) {
+                    // RESTORE HEALTH TO 10 WHEN RESPAWNING FROM FALLING
+                    p.health = PLAYER_MAX_HEALTH; // This is 10
+                    
                     p.pos.x = p.bedPos.x + 0.5;
                     p.pos.y = p.bedPos.y + 2 + 1.6;
                     p.pos.z = p.bedPos.z + 0.5;
                     p.rot.yaw = 0;
                     p.rot.pitch = 0;
+                    
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
-                    io.to(id).emit('notification', 'You fell into the void and respawned at your bed!');
+                    io.to(id).emit('notification', 'You fell into the void and respawned at your bed! Health restored to 10!');
+                    
+                    // Update other players about the health restoration
+                    io.emit('playerHit', {
+                        attackerId: null,
+                        targetId: id,
+                        newHealth: p.health
+                    });
                 } else {
                     eliminatePlayer(id, null);
                 }
