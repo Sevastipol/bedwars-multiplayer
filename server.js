@@ -54,27 +54,27 @@ let suddenDeath = false;
 let roundTimerInterval = null;
 let playerCheckInterval = null;
 
-// Adjusted island positions to maintain spacing with larger emerald island
+// Island positions with 18-block gaps and emerald island 20x20
 const ironIslands = [
-    // Top-left iron island
-    {offsetX: -40, offsetZ: -40, bedX: -39, bedY: 1, bedZ: -39},
-    // Top-right iron island
-    {offsetX: 60, offsetZ: -40, bedX: 61, bedY: 1, bedZ: -39},
-    // Bottom-left iron island
-    {offsetX: -40, offsetZ: 60, bedX: -39, bedY: 1, bedZ: 61},
-    // Bottom-right iron island
-    {offsetX: 60, offsetZ: 60, bedX: 61, bedY: 1, bedZ: 61}
+    // Top-left iron island (6x6)
+    {offsetX: -15, offsetZ: -15, bedX: -14, bedY: 1, bedZ: -14},
+    // Top-right iron island (6x6)
+    {offsetX: 47, offsetZ: -15, bedX: 48, bedY: 1, bedZ: -14},
+    // Bottom-left iron island (6x6)
+    {offsetX: -15, offsetZ: 47, bedX: -14, bedY: 1, bedZ: 48},
+    // Bottom-right iron island (6x6)
+    {offsetX: 47, offsetZ: 47, bedX: 48, bedY: 1, bedZ: 48}
 ];
 
 const goldIslands = [
-    // Top gold island (centered between left and right iron islands)
-    {offsetX: 10, offsetZ: -40, spawnerX: 12.5, spawnerY: 1, spawnerZ: -37.5},
-    // Bottom gold island (centered between left and right iron islands)
-    {offsetX: 10, offsetZ: 60, spawnerX: 12.5, spawnerY: 1, spawnerZ: 62.5}
+    // Top gold island (6x6) - positioned with 18-block gap from iron
+    {offsetX: 9, offsetZ: -15, spawnerX: 11.5, spawnerY: 1, spawnerZ: -12.5},
+    // Bottom gold island (6x6) - positioned with 18-block gap from iron
+    {offsetX: 9, offsetZ: 47, spawnerX: 11.5, spawnerY: 1, spawnerZ: 49.5}
 ];
 
-// Emerald island - now 20x20 in the center
-const emeraldIsland = {offsetX: 0, offsetZ: 0, spawnerX: 10, spawnerY: 1, spawnerZ: 10};
+// Emerald island - now 20x20, adjusted to maintain 18-block gaps
+const emeraldIsland = {offsetX: 9, offsetZ: 9, spawnerX: 19, spawnerY: 1, spawnerZ: 19}; // 20x20 island
 
 let occupiedIronIslands = [];
 
@@ -205,11 +205,12 @@ function createIsland(offsetX, offsetZ, spawnerType = null, isEmerald = false) {
     
     // Add natural rocks for emerald island
     if (isEmerald) {
-        // Add stone pillars/rocks randomly
+        // Add stone pillars/rocks randomly across the 20x20 area
         const rockPositions = [
             // Center cluster
-            {x: 5, z: 5}, {x: 5, z: 6}, {x: 6, z: 5}, {x: 6, z: 6},
-            {x: 5, z: 5, y: 1}, {x: 6, z: 6, y: 1},
+            {x: 8, z: 8}, {x: 8, z: 9}, {x: 9, z: 8}, {x: 9, z: 9},
+            {x: 8, z: 8, y: 1}, {x: 9, z: 9, y: 1},
+            {x: 8, z: 10}, {x: 10, z: 8}, {x: 10, z: 10},
             
             // Corner clusters
             {x: 2, z: 2}, {x: 2, z: 3}, {x: 3, z: 2},
@@ -217,9 +218,14 @@ function createIsland(offsetX, offsetZ, spawnerType = null, isEmerald = false) {
             {x: 2, z: 17}, {x: 2, z: 16}, {x: 3, z: 17},
             {x: 17, z: 17}, {x: 17, z: 16}, {x: 16, z: 17},
             
+            // Edge clusters
+            {x: 8, z: 2}, {x: 2, z: 8}, {x: 17, z: 8}, {x: 8, z: 17},
+            {x: 12, z: 2}, {x: 2, z: 12}, {x: 17, z: 12}, {x: 12, z: 17},
+            
             // Random scattered rocks
-            {x: 8, z: 12}, {x: 12, z: 8}, {x: 10, z: 15},
-            {x: 15, z: 10}, {x: 5, z: 12}, {x: 12, z: 5}
+            {x: 5, z: 5}, {x: 14, z: 14}, {x: 5, z: 14}, {x: 14, z: 5},
+            {x: 7, z: 12}, {x: 12, z: 7}, {x: 10, z: 15},
+            {x: 15, z: 10}, {x: 5, z: 10}, {x: 10, z: 5}
         ];
         
         rockPositions.forEach(rock => {
@@ -233,11 +239,18 @@ function createIsland(offsetX, offsetZ, spawnerType = null, isEmerald = false) {
             if (Math.random() < 0.3 && rockY === 1) {
                 addBlock(rockX, 2, rockZ, 'Stone');
             }
+            
+            // Add occasional third layer to larger rocks
+            if (Math.random() < 0.1 && rockY === 1) {
+                addBlock(rockX, 3, rockZ, 'Stone');
+            }
         });
         
         // Add a few obsidian rocks for variety
         addBlock(offsetX + 13, 1, offsetZ + 13, 'Obsidian');
         addBlock(offsetX + 7, 1, offsetZ + 7, 'Obsidian');
+        addBlock(offsetX + 3, 1, offsetZ + 15, 'Obsidian');
+        addBlock(offsetX + 16, 1, offsetZ + 4, 'Obsidian');
     }
     
     if (spawnerType) {
@@ -292,7 +305,7 @@ function assignPlayerToIsland(playerId) {
             
             const p = players.get(playerId);
             p.bedPos = { x: island.bedX, y: island.bedY, z: island.bedZ };
-            p.pos = { x: island.bedX + 0.5, y: island.bedY + 2 + 1.6, z: island.bedZ + 0.5 };
+            p.pos = { x: island.bedX + 0.5, y: island.bedPos.y + 2 + 1.6, z: island.bedZ + 0.5 };
             p.rot = { yaw: 0, pitch: 0 };
             p.spectator = false;
             p.health = PLAYER_MAX_HEALTH;
@@ -348,7 +361,7 @@ function eliminatePlayer(playerId, eliminatorId) {
     
     p.spectator = true;
     p.health = PLAYER_MAX_HEALTH;
-    p.pos = { x: 10 + 0.5, y: 50, z: 10 + 0.5 };
+    p.pos = { x: emeraldIsland.spawnerX, y: 50, z: emeraldIsland.spawnerZ };
     
     if (p.bedPos) {
         for (let i = 0; i < ironIslands.length; i++) {
@@ -403,7 +416,7 @@ function resetGame() {
         p.bedPos = null;
         p.spectator = true;
         p.health = PLAYER_MAX_HEALTH;
-        p.pos = { x: 10 + 0.5, y: 50, z: 10 + 0.5 };
+        p.pos = { x: emeraldIsland.spawnerX, y: 50, z: emeraldIsland.spawnerZ };
         p.equippedWeapon = null;
         p.lastEnderpearlThrow = 0;
         p.lastFireballThrow = 0;
@@ -620,7 +633,7 @@ io.on('connection', (socket) => {
     console.log(`New connection: ${socket.id}`);
     
     const playerState = {
-        pos: { x: 10 + 0.5, y: 50, z: 10 + 0.5 },
+        pos: { x: emeraldIsland.spawnerX, y: 50, z: emeraldIsland.spawnerZ },
         rot: { yaw: 0, pitch: 0 },
         crouch: false,
         inventory: new Array(INVENTORY_SIZE).fill(null),
@@ -904,7 +917,6 @@ io.on('connection', (socket) => {
             const hasBed = target.bedPos && blocks.get(bedKey) === 'Bed';
             
             if (hasBed) {
-                // RESTORE HEALTH TO 10 WHEN RESPAWNING FROM DEATH
                 target.health = PLAYER_MAX_HEALTH;
                 
                 target.pos.x = target.bedPos.x + 0.5;
