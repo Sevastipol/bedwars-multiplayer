@@ -54,29 +54,22 @@ let suddenDeath = false;
 let roundTimerInterval = null;
 let playerCheckInterval = null;
 
-// Adjust island positions for 20x20 emerald island
-// Iron islands: 6x6, 3 blocks apart from other islands
+// Iron island positions
 const ironIslands = [
-    // Top-left quadrant
-    {offsetX: -45, offsetZ: -45, bedX: -44, bedY: 1, bedZ: -44},
-    // Top-right quadrant  
-    {offsetX: 59, offsetZ: -45, bedX: 60, bedY: 1, bedZ: -44},
-    // Bottom-left quadrant
-    {offsetX: -45, offsetZ: 59, bedX: -44, bedY: 1, bedZ: 60},
-    // Bottom-right quadrant
-    {offsetX: 59, offsetZ: 59, bedX: 60, bedY: 1, bedZ: 60}
+    {offsetX: -15, offsetZ: -15, bedX: -14, bedY: 1, bedZ: -14},
+    {offsetX: 33, offsetZ: -15, bedX: 34, bedY: 1, bedZ: -14},
+    {offsetX: -15, offsetZ: 33, bedX: -14, bedY: 1, bedZ: 34},
+    {offsetX: 33, offsetZ: 33, bedX: 34, bedY: 1, bedZ: 34}
 ];
 
-// Gold islands: 6x6, positioned between iron islands and emerald island
+// Gold island positions
 const goldIslands = [
-    // Left side
-    {offsetX: -18, offsetZ: 7, spawnerX: -15.5, spawnerY: 1, spawnerZ: 9.5},
-    // Right side
-    {offsetX: 32, offsetZ: 7, spawnerX: 34.5, spawnerY: 1, spawnerZ: 9.5}
+    {offsetX: 9, offsetZ: -15, spawnerX: 11.5, spawnerY: 1, spawnerZ: -12.5},
+    {offsetX: 9, offsetZ: 33, spawnerX: 11.5, spawnerY: 1, spawnerZ: 35.5}
 ];
 
-// Emerald island: 20x20 at center with natural rocks
-const emeraldIsland = {offsetX: 7, offsetZ: 7, spawnerX: 17, spawnerY: 1, spawnerZ: 17, size: 20};
+// Emerald island position
+const emeraldIsland = {offsetX: 9, offsetZ: 9, spawnerX: 11.5, spawnerY: 1, spawnerZ: 11.5};
 
 let occupiedIronIslands = [];
 
@@ -212,79 +205,6 @@ function createIsland(offsetX, offsetZ, spawnerType = null) {
     }
 }
 
-function createEmeraldIsland() {
-    const size = emeraldIsland.size;
-    const offsetX = emeraldIsland.offsetX;
-    const offsetZ = emeraldIsland.offsetZ;
-    
-    // Create 20x20 grass base
-    for (let x = 0; x < size; x++) {
-        for (let z = 0; z < size; z++) {
-            addBlock(offsetX + x, 0, offsetZ + z, 'Grass');
-        }
-    }
-    
-    // Add natural stone rocks (3-4 blocks tall)
-    // Create 4 main rock formations
-    const rockPositions = [
-        {centerX: 4, centerZ: 4, radius: 3},
-        {centerX: 15, centerZ: 4, radius: 2},
-        {centerX: 4, centerZ: 15, radius: 3},
-        {centerX: 15, centerZ: 15, radius: 2},
-        {centerX: 9, centerZ: 9, radius: 4}  // Large central rock
-    ];
-    
-    rockPositions.forEach(rock => {
-        const centerX = rock.centerX;
-        const centerZ = rock.centerZ;
-        const radius = rock.radius;
-        
-        for (let dx = -radius; dx <= radius; dx++) {
-            for (let dz = -radius; dz <= radius; dz++) {
-                // Circular rock shape
-                if (dx*dx + dz*dz <= radius*radius) {
-                    const x = offsetX + centerX + dx;
-                    const z = offsetZ + centerZ + dz;
-                    
-                    // Add stone blocks, 1-3 high
-                    const height = Math.floor(Math.random() * 3) + 1;
-                    for (let y = 1; y <= height; y++) {
-                        // Only place if position is valid (not occupied by spawner)
-                        if (!(x === emeraldIsland.spawnerX && y === 1 && z === emeraldIsland.spawnerZ)) {
-                            addBlock(x, y, z, 'Stone');
-                        }
-                    }
-                }
-            }
-        }
-    });
-    
-    // Add some random single stone blocks scattered around
-    for (let i = 0; i < 15; i++) {
-        const x = offsetX + Math.floor(Math.random() * size);
-        const z = offsetZ + Math.floor(Math.random() * size);
-        const height = Math.floor(Math.random() * 2) + 1;
-        
-        for (let y = 1; y <= height; y++) {
-            // Only place if position is valid (not occupied by spawner)
-            if (!(x === emeraldIsland.spawnerX && y === 1 && z === emeraldIsland.spawnerZ)) {
-                addBlock(x, y, z, 'Stone');
-            }
-        }
-    }
-    
-    // Add the emerald spawner at the center of the island
-    const s = {
-        x: emeraldIsland.spawnerX,
-        y: emeraldIsland.spawnerY,
-        z: emeraldIsland.spawnerZ,
-        resourceType: 'emerald',
-        interval: 10 * 1000,  // 10 seconds
-        lastSpawn: Date.now()
-    };
-    spawners.push(s);
-}
-
 function initWorld() {
     blocks.clear();
     pickups.clear();
@@ -294,18 +214,15 @@ function initWorld() {
     windcharges.clear();
     breakingAnimations.clear();
     
-    // Create iron islands
     ironIslands.forEach(island => {
         createIsland(island.offsetX, island.offsetZ, { type: 'iron', interval: 3 });
     });
     
-    // Create gold islands
     goldIslands.forEach(island => {
         createIsland(island.offsetX, island.offsetZ, { type: 'gold', interval: 8 });
     });
     
-    // Create emerald island (20x20 with rocks)
-    createEmeraldIsland();
+    createIsland(emeraldIsland.offsetX, emeraldIsland.offsetZ, { type: 'emerald', interval: 10 });
     
     occupiedIronIslands = [];
 }
@@ -379,7 +296,7 @@ function eliminatePlayer(playerId, eliminatorId) {
     
     p.spectator = true;
     p.health = PLAYER_MAX_HEALTH;
-    p.pos = { x: emeraldIsland.spawnerX, y: 50, z: emeraldIsland.spawnerZ };
+    p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
     
     if (p.bedPos) {
         for (let i = 0; i < ironIslands.length; i++) {
@@ -434,7 +351,7 @@ function resetGame() {
         p.bedPos = null;
         p.spectator = true;
         p.health = PLAYER_MAX_HEALTH;
-        p.pos = { x: emeraldIsland.spawnerX, y: 50, z: emeraldIsland.spawnerZ };
+        p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
         p.equippedWeapon = null;
         p.lastEnderpearlThrow = 0;
         p.lastFireballThrow = 0;
@@ -651,7 +568,7 @@ io.on('connection', (socket) => {
     console.log(`New connection: ${socket.id}`);
     
     const playerState = {
-        pos: { x: emeraldIsland.spawnerX, y: 50, z: emeraldIsland.spawnerZ },
+        pos: { x: 9 + 2.5, y: 50, z: 9 + 2.5 },
         rot: { yaw: 0, pitch: 0 },
         crouch: false,
         inventory: new Array(INVENTORY_SIZE).fill(null),
@@ -665,8 +582,8 @@ io.on('connection', (socket) => {
         lastHitTime: 0,
         equippedWeapon: null,
         lastEnderpearlThrow: 0,
-        lastFireballThrow: 0,
-        lastWindchargeThrow: 0
+        lastFireballThrow = 0,
+        lastWindchargeThrow = 0
     };
     
     players.set(socket.id, playerState);
