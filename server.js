@@ -54,27 +54,29 @@ let suddenDeath = false;
 let roundTimerInterval = null;
 let playerCheckInterval = null;
 
-// Island positions with 18-block gaps and emerald island 20x20
+// Adjust island positions for 20x20 emerald island
+// Iron islands: 6x6, 3 blocks apart from other islands
 const ironIslands = [
-    // Top-left iron island (6x6)
-    {offsetX: -15, offsetZ: -15, bedX: -14, bedY: 1, bedZ: -14},
-    // Top-right iron island (6x6)
-    {offsetX: 47, offsetZ: -15, bedX: 48, bedY: 1, bedZ: -14},
-    // Bottom-left iron island (6x6)
-    {offsetX: -15, offsetZ: 47, bedX: -14, bedY: 1, bedZ: 48},
-    // Bottom-right iron island (6x6)
-    {offsetX: 47, offsetZ: 47, bedX: 48, bedY: 1, bedZ: 48}
+    // Top-left quadrant
+    {offsetX: -45, offsetZ: -45, bedX: -44, bedY: 1, bedZ: -44},
+    // Top-right quadrant  
+    {offsetX: 59, offsetZ: -45, bedX: 60, bedY: 1, bedZ: -44},
+    // Bottom-left quadrant
+    {offsetX: -45, offsetZ: 59, bedX: -44, bedY: 1, bedZ: 60},
+    // Bottom-right quadrant
+    {offsetX: 59, offsetZ: 59, bedX: 60, bedY: 1, bedZ: 60}
 ];
 
+// Gold islands: 6x6, positioned between iron islands and emerald island
 const goldIslands = [
-    // Top gold island (6x6) - positioned with 18-block gap from iron
-    {offsetX: 9, offsetZ: -15, spawnerX: 11.5, spawnerY: 1, spawnerZ: -12.5},
-    // Bottom gold island (6x6) - positioned with 18-block gap from iron
-    {offsetX: 9, offsetZ: 47, spawnerX: 11.5, spawnerY: 1, spawnerZ: 49.5}
+    // Left side
+    {offsetX: -18, offsetZ: 7, spawnerX: -15.5, spawnerY: 1, spawnerZ: 9.5},
+    // Right side
+    {offsetX: 32, offsetZ: 7, spawnerX: 34.5, spawnerY: 1, spawnerZ: 9.5}
 ];
 
-// Emerald island - now 20x20, adjusted to maintain 18-block gaps
-const emeraldIsland = {offsetX: 9, offsetZ: 9, spawnerX: 19, spawnerY: 1, spawnerZ: 19}; // 20x20 island
+// Emerald island: 20x20 at center with natural rocks
+const emeraldIsland = {offsetX: 7, offsetZ: 7, spawnerX: 17, spawnerY: 1, spawnerZ: 17, size: 20};
 
 let occupiedIronIslands = [];
 
@@ -193,77 +195,94 @@ function stopRoundTimer() {
     }
 }
 
-function createIsland(offsetX, offsetZ, spawnerType = null, isEmerald = false) {
-    const size = isEmerald ? 20 : 6;
-    
-    // Create grass base
-    for (let x = 0; x < size; x++) {
-        for (let z = 0; z < size; z++) {
+function createIsland(offsetX, offsetZ, spawnerType = null) {
+    for (let x = 0; x < 6; x++) {
+        for (let z = 0; z < 6; z++) {
             addBlock(offsetX + x, 0, offsetZ + z, 'Grass');
         }
     }
-    
-    // Add natural rocks for emerald island
-    if (isEmerald) {
-        // Add stone pillars/rocks randomly across the 20x20 area
-        const rockPositions = [
-            // Center cluster
-            {x: 8, z: 8}, {x: 8, z: 9}, {x: 9, z: 8}, {x: 9, z: 9},
-            {x: 8, z: 8, y: 1}, {x: 9, z: 9, y: 1},
-            {x: 8, z: 10}, {x: 10, z: 8}, {x: 10, z: 10},
-            
-            // Corner clusters
-            {x: 2, z: 2}, {x: 2, z: 3}, {x: 3, z: 2},
-            {x: 17, z: 2}, {x: 17, z: 3}, {x: 16, z: 2},
-            {x: 2, z: 17}, {x: 2, z: 16}, {x: 3, z: 17},
-            {x: 17, z: 17}, {x: 17, z: 16}, {x: 16, z: 17},
-            
-            // Edge clusters
-            {x: 8, z: 2}, {x: 2, z: 8}, {x: 17, z: 8}, {x: 8, z: 17},
-            {x: 12, z: 2}, {x: 2, z: 12}, {x: 17, z: 12}, {x: 12, z: 17},
-            
-            // Random scattered rocks
-            {x: 5, z: 5}, {x: 14, z: 14}, {x: 5, z: 14}, {x: 14, z: 5},
-            {x: 7, z: 12}, {x: 12, z: 7}, {x: 10, z: 15},
-            {x: 15, z: 10}, {x: 5, z: 10}, {x: 10, z: 5}
-        ];
-        
-        rockPositions.forEach(rock => {
-            const rockX = offsetX + rock.x;
-            const rockZ = offsetZ + rock.z;
-            const rockY = rock.y || 1;
-            
-            addBlock(rockX, rockY, rockZ, 'Stone');
-            
-            // Add occasional second layer to some rocks
-            if (Math.random() < 0.3 && rockY === 1) {
-                addBlock(rockX, 2, rockZ, 'Stone');
-            }
-            
-            // Add occasional third layer to larger rocks
-            if (Math.random() < 0.1 && rockY === 1) {
-                addBlock(rockX, 3, rockZ, 'Stone');
-            }
-        });
-        
-        // Add a few obsidian rocks for variety
-        addBlock(offsetX + 13, 1, offsetZ + 13, 'Obsidian');
-        addBlock(offsetX + 7, 1, offsetZ + 7, 'Obsidian');
-        addBlock(offsetX + 3, 1, offsetZ + 15, 'Obsidian');
-        addBlock(offsetX + 16, 1, offsetZ + 4, 'Obsidian');
-    }
-    
     if (spawnerType) {
         const s = {
-            x: offsetX + (isEmerald ? 10 : 2.5),
-            y: 1,
-            z: offsetZ + (isEmerald ? 10 : 2.5),
+            x: offsetX + 2.5, y: 1, z: offsetZ + 2.5,
             resourceType: spawnerType.type,
             interval: spawnerType.interval * 1000,
             lastSpawn: Date.now()
         };
         spawners.push(s);
     }
+}
+
+function createEmeraldIsland() {
+    const size = emeraldIsland.size;
+    const offsetX = emeraldIsland.offsetX;
+    const offsetZ = emeraldIsland.offsetZ;
+    
+    // Create 20x20 grass base
+    for (let x = 0; x < size; x++) {
+        for (let z = 0; z < size; z++) {
+            addBlock(offsetX + x, 0, offsetZ + z, 'Grass');
+        }
+    }
+    
+    // Add natural stone rocks (3-4 blocks tall)
+    // Create 4 main rock formations
+    const rockPositions = [
+        {centerX: 4, centerZ: 4, radius: 3},
+        {centerX: 15, centerZ: 4, radius: 2},
+        {centerX: 4, centerZ: 15, radius: 3},
+        {centerX: 15, centerZ: 15, radius: 2},
+        {centerX: 9, centerZ: 9, radius: 4}  // Large central rock
+    ];
+    
+    rockPositions.forEach(rock => {
+        const centerX = rock.centerX;
+        const centerZ = rock.centerZ;
+        const radius = rock.radius;
+        
+        for (let dx = -radius; dx <= radius; dx++) {
+            for (let dz = -radius; dz <= radius; dz++) {
+                // Circular rock shape
+                if (dx*dx + dz*dz <= radius*radius) {
+                    const x = offsetX + centerX + dx;
+                    const z = offsetZ + centerZ + dz;
+                    
+                    // Add stone blocks, 1-3 high
+                    const height = Math.floor(Math.random() * 3) + 1;
+                    for (let y = 1; y <= height; y++) {
+                        // Only place if position is valid (not occupied by spawner)
+                        if (!(x === emeraldIsland.spawnerX && y === 1 && z === emeraldIsland.spawnerZ)) {
+                            addBlock(x, y, z, 'Stone');
+                        }
+                    }
+                }
+            }
+        }
+    });
+    
+    // Add some random single stone blocks scattered around
+    for (let i = 0; i < 15; i++) {
+        const x = offsetX + Math.floor(Math.random() * size);
+        const z = offsetZ + Math.floor(Math.random() * size);
+        const height = Math.floor(Math.random() * 2) + 1;
+        
+        for (let y = 1; y <= height; y++) {
+            // Only place if position is valid (not occupied by spawner)
+            if (!(x === emeraldIsland.spawnerX && y === 1 && z === emeraldIsland.spawnerZ)) {
+                addBlock(x, y, z, 'Stone');
+            }
+        }
+    }
+    
+    // Add the emerald spawner at the center of the island
+    const s = {
+        x: emeraldIsland.spawnerX,
+        y: emeraldIsland.spawnerY,
+        z: emeraldIsland.spawnerZ,
+        resourceType: 'emerald',
+        interval: 10 * 1000,  // 10 seconds
+        lastSpawn: Date.now()
+    };
+    spawners.push(s);
 }
 
 function initWorld() {
@@ -275,19 +294,18 @@ function initWorld() {
     windcharges.clear();
     breakingAnimations.clear();
     
-    // Create iron islands (6x6)
+    // Create iron islands
     ironIslands.forEach(island => {
-        createIsland(island.offsetX, island.offsetZ, { type: 'iron', interval: 3 }, false);
-        addBlock(island.bedX, island.bedY, island.bedZ, 'Bed');
+        createIsland(island.offsetX, island.offsetZ, { type: 'iron', interval: 3 });
     });
     
-    // Create gold islands (6x6)
+    // Create gold islands
     goldIslands.forEach(island => {
-        createIsland(island.offsetX, island.offsetZ, { type: 'gold', interval: 8 }, false);
+        createIsland(island.offsetX, island.offsetZ, { type: 'gold', interval: 8 });
     });
     
     // Create emerald island (20x20 with rocks)
-    createIsland(emeraldIsland.offsetX, emeraldIsland.offsetZ, { type: 'emerald', interval: 10 }, true);
+    createEmeraldIsland();
     
     occupiedIronIslands = [];
 }
@@ -305,7 +323,7 @@ function assignPlayerToIsland(playerId) {
             
             const p = players.get(playerId);
             p.bedPos = { x: island.bedX, y: island.bedY, z: island.bedZ };
-            p.pos = { x: island.bedX + 0.5, y: island.bedPos.y + 2 + 1.6, z: island.bedZ + 0.5 };
+            p.pos = { x: island.bedX + 0.5, y: island.bedY + 2 + 1.6, z: island.bedZ + 0.5 };
             p.rot = { yaw: 0, pitch: 0 };
             p.spectator = false;
             p.health = PLAYER_MAX_HEALTH;
@@ -917,7 +935,8 @@ io.on('connection', (socket) => {
             const hasBed = target.bedPos && blocks.get(bedKey) === 'Bed';
             
             if (hasBed) {
-                target.health = PLAYER_MAX_HEALTH;
+                // RESTORE HEALTH TO 10 WHEN RESPAWNING FROM DEATH
+                target.health = PLAYER_MAX_HEALTH; // This is 10
                 
                 target.pos.x = target.bedPos.x + 0.5;
                 target.pos.y = target.bedPos.y + 2 + 1.6;
@@ -1476,7 +1495,8 @@ setInterval(() => {
                     const hasBed = directHitPlayer.player.bedPos && blocks.get(bedKey) === 'Bed';
                     
                     if (hasBed) {
-                        directHitPlayer.player.health = PLAYER_MAX_HEALTH;
+                        // RESTORE HEALTH TO 10 WHEN RESPAWNING FROM FIREBALL DEATH
+                        directHitPlayer.player.health = PLAYER_MAX_HEALTH; // This is 10
                         
                         directHitPlayer.player.pos.x = directHitPlayer.player.bedPos.x + 0.5;
                         directHitPlayer.player.pos.y = directHitPlayer.player.bedPos.y + 2 + 1.6;
@@ -1841,7 +1861,8 @@ setInterval(() => {
                 const hasBed = p.bedPos && blocks.get(bedKey) === 'Bed';
                 
                 if (hasBed) {
-                    p.health = PLAYER_MAX_HEALTH;
+                    // RESTORE HEALTH TO 10 WHEN RESPAWNING FROM FALLING
+                    p.health = PLAYER_MAX_HEALTH; // This is 10
                     
                     p.pos.x = p.bedPos.x + 0.5;
                     p.pos.y = p.bedPos.y + 2 + 1.6;
@@ -1852,6 +1873,7 @@ setInterval(() => {
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
                     io.to(id).emit('notification', 'You fell into the void and respawned at your bed! Health restored to 10!');
                     
+                    // Update other players about the health restoration
                     io.emit('playerHit', {
                         attackerId: null,
                         targetId: id,
