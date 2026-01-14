@@ -11,6 +11,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const PORT = process.env.PORT || 3000;
 
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 // Config
 const BLOCK_TYPES = {
     'Grass': { color: 0x4d9043, cost: { iron: 5 }, breakTime: 1.2, buyAmount: 8, hasTexture: true },
@@ -52,22 +54,27 @@ let suddenDeath = false;
 let roundTimerInterval = null;
 let playerCheckInterval = null;
 
-// Island configurations with adjusted spacing
+// Adjusted island positions to maintain spacing with larger emerald island
 const ironIslands = [
-    {offsetX: -30, offsetZ: -30, bedX: -29, bedY: 1, bedZ: -29},
-    {offsetX: 63, offsetZ: -30, bedX: 64, bedY: 1, bedZ: -29},
-    {offsetX: -30, offsetZ: 63, bedX: -29, bedY: 1, bedZ: 64},
-    {offsetX: 63, offsetZ: 63, bedX: 64, bedY: 1, bedZ: 64}
+    // Top-left iron island
+    {offsetX: -40, offsetZ: -40, bedX: -39, bedY: 1, bedZ: -39},
+    // Top-right iron island
+    {offsetX: 60, offsetZ: -40, bedX: 61, bedY: 1, bedZ: -39},
+    // Bottom-left iron island
+    {offsetX: -40, offsetZ: 60, bedX: -39, bedY: 1, bedZ: 61},
+    // Bottom-right iron island
+    {offsetX: 60, offsetZ: 60, bedX: 61, bedY: 1, bedZ: 61}
 ];
 
-// Gold island positions - moved further out
 const goldIslands = [
-    {offsetX: 34, offsetZ: -30, spawnerX: 36.5, spawnerY: 1, spawnerZ: -27.5},
-    {offsetX: 34, offsetZ: 63, spawnerX: 36.5, spawnerY: 1, spawnerZ: 66.5}
+    // Top gold island (centered between left and right iron islands)
+    {offsetX: 10, offsetZ: -40, spawnerX: 12.5, spawnerY: 1, spawnerZ: -37.5},
+    // Bottom gold island (centered between left and right iron islands)
+    {offsetX: 10, offsetZ: 60, spawnerX: 12.5, spawnerY: 1, spawnerZ: 62.5}
 ];
 
-// Emerald island position - centered and larger (20x20)
-const emeraldIsland = {offsetX: 34, offsetZ: 34, spawnerX: 44.5, spawnerY: 1, spawnerZ: 44.5};
+// Emerald island - now 20x20 in the center
+const emeraldIsland = {offsetX: 0, offsetZ: 0, spawnerX: 10, spawnerY: 1, spawnerZ: 10};
 
 let occupiedIronIslands = [];
 
@@ -186,7 +193,10 @@ function stopRoundTimer() {
     }
 }
 
-function createIsland(offsetX, offsetZ, spawnerType = null, size = 6, addRocks = false) {
+function createIsland(offsetX, offsetZ, spawnerType = null, isEmerald = false) {
+    const size = isEmerald ? 20 : 6;
+    
+    // Create grass base
     for (let x = 0; x < size; x++) {
         for (let z = 0; z < size; z++) {
             addBlock(offsetX + x, 0, offsetZ + z, 'Grass');
@@ -194,68 +204,47 @@ function createIsland(offsetX, offsetZ, spawnerType = null, size = 6, addRocks =
     }
     
     // Add natural rocks for emerald island
-    if (addRocks) {
-        // Add random rocks on the island (stone blocks at height 1)
-        const rockCount = Math.floor(size * size * 0.15); // 15% of island area
-        for (let i = 0; i < rockCount; i++) {
-            const rockX = offsetX + Math.floor(Math.random() * size);
-            const rockZ = offsetZ + Math.floor(Math.random() * size);
+    if (isEmerald) {
+        // Add stone pillars/rocks randomly
+        const rockPositions = [
+            // Center cluster
+            {x: 5, z: 5}, {x: 5, z: 6}, {x: 6, z: 5}, {x: 6, z: 6},
+            {x: 5, z: 5, y: 1}, {x: 6, z: 6, y: 1},
             
-            // Don't place rocks too close to spawner area
-            if (Math.abs(rockX - (offsetX + size/2)) > 3 || Math.abs(rockZ - (offsetZ + size/2)) > 3) {
-                addBlock(rockX, 1, rockZ, 'Stone');
-                
-                // Sometimes add taller rock formations
-                if (Math.random() > 0.6) {
-                    addBlock(rockX, 2, rockZ, 'Stone');
-                    if (Math.random() > 0.7) {
-                        addBlock(rockX, 3, rockZ, 'Stone');
-                        if (Math.random() > 0.8) {
-                            addBlock(rockX, 4, rockZ, 'Stone');
-                        }
-                    }
-                }
-            }
-        }
+            // Corner clusters
+            {x: 2, z: 2}, {x: 2, z: 3}, {x: 3, z: 2},
+            {x: 17, z: 2}, {x: 17, z: 3}, {x: 16, z: 2},
+            {x: 2, z: 17}, {x: 2, z: 16}, {x: 3, z: 17},
+            {x: 17, z: 17}, {x: 17, z: 16}, {x: 16, z: 17},
+            
+            // Random scattered rocks
+            {x: 8, z: 12}, {x: 12, z: 8}, {x: 10, z: 15},
+            {x: 15, z: 10}, {x: 5, z: 12}, {x: 12, z: 5}
+        ];
         
-        // Add some decorative blocks around the island edges
-        const decorativeCount = Math.floor(size * 4 * 0.3); // 30% of perimeter
-        for (let i = 0; i < decorativeCount; i++) {
-            const side = Math.floor(Math.random() * 4);
-            let decorX, decorZ;
+        rockPositions.forEach(rock => {
+            const rockX = offsetX + rock.x;
+            const rockZ = offsetZ + rock.z;
+            const rockY = rock.y || 1;
             
-            switch(side) {
-                case 0: // Top edge
-                    decorX = offsetX + Math.floor(Math.random() * size);
-                    decorZ = offsetZ;
-                    break;
-                case 1: // Bottom edge
-                    decorX = offsetX + Math.floor(Math.random() * size);
-                    decorZ = offsetZ + size - 1;
-                    break;
-                case 2: // Left edge
-                    decorX = offsetX;
-                    decorZ = offsetZ + Math.floor(Math.random() * size);
-                    break;
-                case 3: // Right edge
-                    decorX = offsetX + size - 1;
-                    decorZ = offsetZ + Math.floor(Math.random() * size);
-                    break;
-            }
+            addBlock(rockX, rockY, rockZ, 'Stone');
             
-            // Add some variety in rock types
-            if (Math.random() > 0.5) {
-                addBlock(decorX, 1, decorZ, 'Stone');
-                if (Math.random() > 0.7) {
-                    addBlock(decorX, 2, decorZ, 'Stone');
-                }
+            // Add occasional second layer to some rocks
+            if (Math.random() < 0.3 && rockY === 1) {
+                addBlock(rockX, 2, rockZ, 'Stone');
             }
-        }
+        });
+        
+        // Add a few obsidian rocks for variety
+        addBlock(offsetX + 13, 1, offsetZ + 13, 'Obsidian');
+        addBlock(offsetX + 7, 1, offsetZ + 7, 'Obsidian');
     }
     
     if (spawnerType) {
         const s = {
-            x: offsetX + size/2, y: 1, z: offsetZ + size/2,
+            x: offsetX + (isEmerald ? 10 : 2.5),
+            y: 1,
+            z: offsetZ + (isEmerald ? 10 : 2.5),
             resourceType: spawnerType.type,
             interval: spawnerType.interval * 1000,
             lastSpawn: Date.now()
@@ -275,16 +264,17 @@ function initWorld() {
     
     // Create iron islands (6x6)
     ironIslands.forEach(island => {
-        createIsland(island.offsetX, island.offsetZ, { type: 'iron', interval: 3 });
+        createIsland(island.offsetX, island.offsetZ, { type: 'iron', interval: 3 }, false);
+        addBlock(island.bedX, island.bedY, island.bedZ, 'Bed');
     });
     
     // Create gold islands (6x6)
     goldIslands.forEach(island => {
-        createIsland(island.offsetX, island.offsetZ, { type: 'gold', interval: 8 });
+        createIsland(island.offsetX, island.offsetZ, { type: 'gold', interval: 8 }, false);
     });
     
     // Create emerald island (20x20 with rocks)
-    createIsland(emeraldIsland.offsetX, emeraldIsland.offsetZ, { type: 'emerald', interval: 10 }, 20, true);
+    createIsland(emeraldIsland.offsetX, emeraldIsland.offsetZ, { type: 'emerald', interval: 10 }, true);
     
     occupiedIronIslands = [];
 }
@@ -358,7 +348,7 @@ function eliminatePlayer(playerId, eliminatorId) {
     
     p.spectator = true;
     p.health = PLAYER_MAX_HEALTH;
-    p.pos = { x: emeraldIsland.offsetX + 10, y: 50, z: emeraldIsland.offsetZ + 10 };
+    p.pos = { x: 10 + 0.5, y: 50, z: 10 + 0.5 };
     
     if (p.bedPos) {
         for (let i = 0; i < ironIslands.length; i++) {
@@ -413,7 +403,7 @@ function resetGame() {
         p.bedPos = null;
         p.spectator = true;
         p.health = PLAYER_MAX_HEALTH;
-        p.pos = { x: emeraldIsland.offsetX + 10, y: 50, z: emeraldIsland.offsetZ + 10 };
+        p.pos = { x: 10 + 0.5, y: 50, z: 10 + 0.5 };
         p.equippedWeapon = null;
         p.lastEnderpearlThrow = 0;
         p.lastFireballThrow = 0;
@@ -630,7 +620,7 @@ io.on('connection', (socket) => {
     console.log(`New connection: ${socket.id}`);
     
     const playerState = {
-        pos: { x: emeraldIsland.offsetX + 10, y: 50, z: emeraldIsland.offsetZ + 10 },
+        pos: { x: 10 + 0.5, y: 50, z: 10 + 0.5 },
         rot: { yaw: 0, pitch: 0 },
         crouch: false,
         inventory: new Array(INVENTORY_SIZE).fill(null),
@@ -914,6 +904,7 @@ io.on('connection', (socket) => {
             const hasBed = target.bedPos && blocks.get(bedKey) === 'Bed';
             
             if (hasBed) {
+                // RESTORE HEALTH TO 10 WHEN RESPAWNING FROM DEATH
                 target.health = PLAYER_MAX_HEALTH;
                 
                 target.pos.x = target.bedPos.x + 0.5;
@@ -1163,6 +1154,8 @@ io.on('connection', (socket) => {
             if (player.spectator) return;
             
             applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
+            
+            io.to(playerId).emit('notification', 'Knocked back by fireball!');
         });
         
         const blocksDestroyed = [];
@@ -1396,7 +1389,7 @@ setInterval(() => {
                 
                 pearl.arrived = true;
                 pearlRemovals.push(id);
-            } else if (pearl.pos.y < -50 || now - pearl.createdAt > 10000) {
+            } else if (pearl.pos.y < -30 || now - pearl.createdAt > 10000) {
                 pearl.arrived = true;
                 pearlRemovals.push(id);
             } else {
@@ -1495,6 +1488,8 @@ setInterval(() => {
                     } else {
                         eliminatePlayer(directHitPlayer.id, fireball.owner);
                     }
+                } else {
+                    io.to(directHitPlayer.id).emit('notification', 'Direct fireball hit! -6 damage');
                 }
                 
                 const explosionX = Math.floor(fireball.pos.x);
@@ -1538,6 +1533,10 @@ setInterval(() => {
                     if (player.spectator) return;
                     
                     applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
+                    
+                    if (playerId !== directHitPlayer.id) {
+                        io.to(playerId).emit('notification', 'Knocked back by fireball!');
+                    }
                 });
                 
                 io.emit('fireballExplosion', {
@@ -1585,9 +1584,11 @@ setInterval(() => {
                         const explosionForce = 3;
                         
                         players.forEach((player, playerId) => {
-                            if (player.spectator) return;
+                            if (player.spectator || playerId === fireball.owner) return;
                             
                             applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
+                            
+                            io.to(playerId).emit('notification', 'Knocked back by fireball!');
                         });
                         
                         const blocksDestroyed = [];
@@ -1628,7 +1629,7 @@ setInterval(() => {
                         
                         fireball.arrived = true;
                         fireballRemovals.push(id);
-                    } else if (fireball.pos.y < -50 || now - fireball.createdAt > 10000) {
+                    } else if (fireball.pos.y < -30 || now - fireball.createdAt > 10000) {
                         fireball.arrived = true;
                         fireballRemovals.push(id);
                     } else {
@@ -1639,7 +1640,7 @@ setInterval(() => {
                             z: fireball.pos.z
                         });
                     }
-                } else if (fireball.pos.y < -50 || now - fireball.createdAt > 10000) {
+                } else if (fireball.pos.y < -30 || now - fireball.createdAt > 10000) {
                     fireball.arrived = true;
                     fireballRemovals.push(id);
                 } else {
@@ -1701,6 +1702,7 @@ setInterval(() => {
                 
                 applyKnockback(directHitPlayer.player, windcharge.pos, 8.0, 1.5, true);
                 
+                io.to(directHitPlayer.id).emit('notification', 'Direct wind charge hit!');
                 console.log(`Wind charge direct hit: ${directHitPlayer.id} - 8 blocks knockback`);
                 
                 const explosionX = Math.floor(windcharge.pos.x);
@@ -1753,6 +1755,8 @@ setInterval(() => {
                             if (player.spectator) return;
                             
                             applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
+                            
+                            io.to(playerId).emit('notification', 'Wind charge explosion!');
                         });
                         
                         io.emit('windchargeExplosion', {
@@ -1763,7 +1767,7 @@ setInterval(() => {
                         
                         windcharge.arrived = true;
                         windchargeRemovals.push(id);
-                    } else if (windcharge.pos.y < -50 || now - windcharge.createdAt > 10000) {
+                    } else if (windcharge.pos.y < -30 || now - windcharge.createdAt > 10000) {
                         windcharge.arrived = true;
                         windchargeRemovals.push(id);
                     } else {
@@ -1774,7 +1778,7 @@ setInterval(() => {
                             z: windcharge.pos.z
                         });
                     }
-                } else if (windcharge.pos.y < -50 || now - windcharge.createdAt > 10000) {
+                } else if (windcharge.pos.y < -30 || now - windcharge.createdAt > 10000) {
                     windcharge.arrived = true;
                     windchargeRemovals.push(id);
                 } else {
@@ -1820,7 +1824,7 @@ setInterval(() => {
         players.forEach((p, id) => {
             if (p.spectator) return;
             
-            if (p.pos.y < -50 && now - p.lastRespawn > 2000) {
+            if (p.pos.y < -30 && now - p.lastRespawn > 2000) {
                 const bedKey = p.bedPos ? blockKey(p.bedPos.x, p.bedPos.y, p.bedPos.z) : null;
                 const hasBed = p.bedPos && blocks.get(bedKey) === 'Bed';
                 
@@ -1864,9 +1868,5 @@ setInterval(() => {
     }));
     io.emit('playersUpdate', states);
 }, 50);
-
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
 
 startPlayerCheck();
