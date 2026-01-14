@@ -1,187 +1,1872 @@
-// Fireball explosion effect - ENHANCED WITH MORE PARTICLES
-function createFireballExplosion(x, y, z) {
-    // Main explosion particles - INCREASED FROM 30 TO 80 PARTICLES
-    const particleCount = 80;
-    const explosionGroup = new THREE.Group();
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const path = require('path');
+
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, { cors: { origin: '*' } });
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+const PORT = process.env.PORT || 3000;
+
+// Config
+const BLOCK_TYPES = {
+    'Grass': { color: 0x4d9043, cost: { iron: 5 }, breakTime: 1.2, buyAmount: 8, hasTexture: true },
+    'Glass': { color: 0xade8f4, cost: { iron: 5 }, breakTime: 0.4, buyAmount: 16, opacity: 0.6 },
+    'Wood': { color: 0x5d4037, cost: { gold: 5 }, breakTime: 3, buyAmount: 32, hasTexture: true },
+    'Stone': { color: 0x777777, cost: { gold: 5 }, breakTime: 6, buyAmount: 8, hasTexture: true },
+    'Obsidian': { color: 0x111111, cost: { emerald: 1 }, breakTime: 12, buyAmount: 1, hasTexture: true },
+    'Bed': { color: 0xff0000, breakTime: 0.8, buyAmount: 1, hasTexture: false },
+    'Enderpearl': { color: 0x00ff88, cost: { emerald: 2 }, buyAmount: 1, isItem: true, hasTexture: true },
+    'Fireball': { color: 0xff5500, cost: { iron: 48 }, buyAmount: 1, isItem: true, hasTexture: true },
+    'Wind Charge': { color: 0x88ccff, cost: { gold: 10 }, buyAmount: 1, isItem: true, hasTexture: true },
+    'Wooden Sword': { color: 0x8B4513, cost: { iron: 20 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 2, hasTexture: true },
+    'Iron Sword': { color: 0xC0C0C0, cost: { gold: 10 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 3, hasTexture: true },
+    'Emerald Sword': { color: 0x00FF00, cost: { emerald: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 4, hasTexture: true },
+    'Axe': { color: 0x8B4513, cost: { gold: 5 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'axe', breakMultiplier: 0.333, hasTexture: true },
+    'Pickaxe': { color: 0xC0C0C0, cost: { gold: 5 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'pickaxe', breakMultiplier: 0.333, hasTexture: true }
+};
+const MAX_STACK = 64;
+const INVENTORY_SIZE = 9;
+const BED_DESTRUCTION_TIME = 10 * 60 * 1000;
+const ROUND_DURATION = 15 * 60 * 1000;
+const REQUIRED_PLAYERS = 2;
+const PLAYER_MAX_HEALTH = 10;
+
+// State
+const blocks = new Map();
+const pickups = new Map();
+const spawners = [];
+const players = new Map();
+const enderpearls = new Map();
+const fireballs = new Map();
+const windcharges = new Map();
+const breakingAnimations = new Map();
+
+let gameActive = false;
+let countdownTimer = null;
+let roundStartTime = null;
+let suddenDeath = false;
+let roundTimerInterval = null;
+let playerCheckInterval = null;
+
+// Island configurations with adjusted spacing
+const ironIslands = [
+    {offsetX: -30, offsetZ: -30, bedX: -29, bedY: 1, bedZ: -29},
+    {offsetX: 63, offsetZ: -30, bedX: 64, bedY: 1, bedZ: -29},
+    {offsetX: -30, offsetZ: 63, bedX: -29, bedY: 1, bedZ: 64},
+    {offsetX: 63, offsetZ: 63, bedX: 64, bedY: 1, bedZ: 64}
+];
+
+// Gold island positions - moved further out
+const goldIslands = [
+    {offsetX: 34, offsetZ: -30, spawnerX: 36.5, spawnerY: 1, spawnerZ: -27.5},
+    {offsetX: 34, offsetZ: 63, spawnerX: 36.5, spawnerY: 1, spawnerZ: 66.5}
+];
+
+// Emerald island position - centered and larger (20x20)
+const emeraldIsland = {offsetX: 34, offsetZ: 34, spawnerX: 44.5, spawnerY: 1, spawnerZ: 44.5};
+
+let occupiedIronIslands = [];
+
+function blockKey(x, y, z) {
+    return `${x},${y},${z}`;
+}
+
+function addBlock(x, y, z, type) {
+    const key = blockKey(x, y, z);
+    if (blocks.has(key)) return false;
+    blocks.set(key, type);
+    io.emit('addBlock', { x, y, z, type });
+    return true;
+}
+
+function removeBlock(x, y, z) {
+    const key = blockKey(x, y, z);
+    if (!blocks.has(key)) return false;
+    const type = blocks.get(key);
+    blocks.delete(key);
+    io.emit('removeBlock', { x, y, z });
     
-    // Core explosion flash
-    const coreGeometry = new THREE.SphereGeometry(1.5, 16, 16);
-    const coreMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0xffaa00,
-        transparent: true,
-        opacity: 0.8
-    });
-    const core = new THREE.Mesh(coreGeometry, coreMaterial);
-    core.position.set(x + 0.5, y + 0.5, z + 0.5);
-    explosionGroup.add(core);
-    
-    // Large fire particles
-    for (let i = 0; i < particleCount; i++) {
-        const size = 0.1 + Math.random() * 0.2;
-        const geometry = new THREE.SphereGeometry(size, 8, 8);
-        
-        // Random fire colors
-        const colors = [0xff5500, 0xffaa00, 0xff6600, 0xff8800];
-        const color = colors[Math.floor(Math.random() * colors.length)];
-        
-        const material = new THREE.MeshBasicMaterial({ 
-            color: color,
-            transparent: true,
-            opacity: 0.9
-        });
-        const particle = new THREE.Mesh(geometry, material);
-        
-        // Random direction in all directions with more variation
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.random() * Math.PI;
-        const speed = 2.5 + Math.random() * 3;
-        
-        particle.userData.velocity = {
-            x: Math.sin(phi) * Math.cos(theta) * speed,
-            y: Math.cos(phi) * speed,
-            z: Math.sin(phi) * Math.sin(theta) * speed
-        };
-        particle.userData.life = 1.0;
-        particle.userData.decay = 0.02 + Math.random() * 0.03;
-        particle.userData.rotationSpeed = (Math.random() - 0.5) * 0.2;
-        
-        particle.position.set(x + 0.5, y + 0.5, z + 0.5);
-        explosionGroup.add(particle);
-    }
-    
-    // Add smoke particles
-    const smokeCount = 40;
-    for (let i = 0; i < smokeCount; i++) {
-        const size = 0.15 + Math.random() * 0.25;
-        const geometry = new THREE.SphereGeometry(size, 6, 6);
-        const material = new THREE.MeshBasicMaterial({ 
-            color: 0x333333,
-            transparent: true,
-            opacity: 0.7
-        });
-        const smoke = new THREE.Mesh(geometry, material);
-        
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.random() * Math.PI;
-        const speed = 1.5 + Math.random() * 2;
-        
-        smoke.userData.velocity = {
-            x: Math.sin(phi) * Math.cos(theta) * speed * 0.7,
-            y: Math.abs(Math.cos(phi)) * speed * 1.5, // Smoke rises more
-            z: Math.sin(phi) * Math.sin(theta) * speed * 0.7
-        };
-        smoke.userData.life = 1.0;
-        smoke.userData.decay = 0.01 + Math.random() * 0.02;
-        smoke.userData.growth = 1.0 + Math.random() * 0.5;
-        
-        smoke.position.set(x + 0.5, y + 0.5, z + 0.5);
-        explosionGroup.add(smoke);
-    }
-    
-    // Add fire rings
-    const ringCount = 6;
-    for (let i = 0; i < ringCount; i++) {
-        const radius = 0.3 + Math.random() * 0.4;
-        const segments = 12;
-        const ringGeometry = new THREE.RingGeometry(radius, radius + 0.1, segments);
-        const ringMaterial = new THREE.MeshBasicMaterial({
-            color: 0xff5500,
-            transparent: true,
-            opacity: 0.8,
-            side: THREE.DoubleSide
-        });
-        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-        
-        const angle = (i / ringCount) * Math.PI * 2;
-        const distance = 0.8 + Math.random() * 0.6;
-        
-        ring.position.set(
-            x + 0.5 + Math.cos(angle) * distance,
-            y + 0.5 + Math.random() * 0.5,
-            z + 0.5 + Math.sin(angle) * distance
-        );
-        
-        // Random orientation
-        ring.rotation.x = Math.random() * Math.PI;
-        ring.rotation.y = Math.random() * Math.PI;
-        
-        ring.userData = {
-            life: 1.0,
-            decay: 0.04,
-            scale: 1.0,
-            expandSpeed: 3 + Math.random() * 4,
-            rotateSpeed: (Math.random() - 0.5) * 0.1
-        };
-        
-        explosionGroup.add(ring);
-    }
-    
-    scene.add(explosionGroup);
-    
-    function animateExplosion() {
-        let allDead = true;
-        
-        explosionGroup.children.forEach(object => {
-            if (object.userData.life <= 0) return;
-            
-            object.userData.life -= object.userData.decay;
-            
-            if (object.userData.life > 0) {
-                allDead = false;
+    if (type === 'Bed') {
+        players.forEach((p, id) => {
+            if (p.bedPos && p.bedPos.x === x && p.bedPos.y === y && p.bedPos.z === z) {
+                p.bedPos = null;
+                io.to(id).emit('bedDestroyed');
                 
-                // Handle core flash
-                if (object === core) {
-                    object.material.opacity = object.userData.life * 0.8;
-                    object.scale.setScalar(1 + (1 - object.userData.life) * 2);
+                if (!suddenDeath && gameActive) {
+                    io.to(id).emit('notification', 'Your bed was destroyed! You will not respawn!');
                 }
-                // Handle fire particles
-                else if (object.userData.velocity && !object.userData.growth) {
-                    object.position.x += object.userData.velocity.x * 0.1;
-                    object.position.y += object.userData.velocity.y * 0.1;
-                    object.position.z += object.userData.velocity.z * 0.1;
-                    object.material.opacity = object.userData.life;
-                    object.scale.setScalar(object.userData.life * 0.8);
-                    
-                    // Add rotation to particles
-                    if (object.userData.rotationSpeed) {
-                        object.rotation.x += object.userData.rotationSpeed;
-                        object.rotation.y += object.userData.rotationSpeed;
+            }
+        });
+    }
+    return true;
+}
+
+function spawnPickup(x, y, z, resourceType) {
+    const id = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    pickups.set(id, { x, y, z, resourceType });
+    io.emit('addPickup', { id, x, y, z, resourceType });
+}
+
+function addToInventory(inv, type, amount) {
+    let remaining = amount;
+    for (let i = 0; i < INVENTORY_SIZE; i++) {
+        if (inv[i] && inv[i].type === type && inv[i].count < MAX_STACK) {
+            const space = MAX_STACK - inv[i].count;
+            const add = Math.min(space, remaining);
+            inv[i].count += add;
+            remaining -= add;
+            if (remaining === 0) return true;
+        }
+    }
+    for (let i = 0; i < INVENTORY_SIZE; i++) {
+        if (!inv[i]) {
+            const add = Math.min(MAX_STACK, remaining);
+            inv[i] = { type, count: add };
+            remaining -= add;
+            if (remaining === 0) return true;
+        }
+    }
+    return remaining === 0;
+}
+
+function canAfford(currency, cost) {
+    for (const [res, amt] of Object.entries(cost)) {
+        if ((currency[res] || 0) < amt) return false;
+    }
+    return true;
+}
+
+function deductCurrency(currency, cost) {
+    for (const [res, amt] of Object.entries(cost)) {
+        currency[res] -= amt;
+    }
+}
+
+function getActivePlayers() {
+    return Array.from(players.values()).filter(p => !p.spectator);
+}
+
+function getPlayersNeeded() {
+    const activePlayers = getActivePlayers().length;
+    return Math.max(0, REQUIRED_PLAYERS - activePlayers);
+}
+
+function updateWaitingMessages() {
+    const playersNeeded = getPlayersNeeded();
+    io.emit('updateWaiting', playersNeeded);
+}
+
+function startRoundTimer() {
+    let timeRemaining = ROUND_DURATION / 1000;
+    
+    if (roundTimerInterval) {
+        clearInterval(roundTimerInterval);
+    }
+    
+    roundTimerInterval = setInterval(() => {
+        timeRemaining--;
+        io.emit('updateTimer', timeRemaining);
+        
+        if (timeRemaining <= 0) {
+            clearInterval(roundTimerInterval);
+            roundTimerInterval = null;
+            endGame(null);
+        }
+    }, 1000);
+}
+
+function stopRoundTimer() {
+    if (roundTimerInterval) {
+        clearInterval(roundTimerInterval);
+        roundTimerInterval = null;
+    }
+}
+
+function createIsland(offsetX, offsetZ, spawnerType = null, size = 6, addRocks = false) {
+    for (let x = 0; x < size; x++) {
+        for (let z = 0; z < size; z++) {
+            addBlock(offsetX + x, 0, offsetZ + z, 'Grass');
+        }
+    }
+    
+    // Add natural rocks for emerald island
+    if (addRocks) {
+        // Add random rocks on the island (stone blocks at height 1)
+        const rockCount = Math.floor(size * size * 0.15); // 15% of island area
+        for (let i = 0; i < rockCount; i++) {
+            const rockX = offsetX + Math.floor(Math.random() * size);
+            const rockZ = offsetZ + Math.floor(Math.random() * size);
+            
+            // Don't place rocks too close to spawner area
+            if (Math.abs(rockX - (offsetX + size/2)) > 3 || Math.abs(rockZ - (offsetZ + size/2)) > 3) {
+                addBlock(rockX, 1, rockZ, 'Stone');
+                
+                // Sometimes add taller rock formations
+                if (Math.random() > 0.6) {
+                    addBlock(rockX, 2, rockZ, 'Stone');
+                    if (Math.random() > 0.7) {
+                        addBlock(rockX, 3, rockZ, 'Stone');
+                        if (Math.random() > 0.8) {
+                            addBlock(rockX, 4, rockZ, 'Stone');
+                        }
                     }
                 }
-                // Handle smoke particles
-                else if (object.userData.velocity && object.userData.growth) {
-                    object.position.x += object.userData.velocity.x * 0.1;
-                    object.position.y += object.userData.velocity.y * 0.1;
-                    object.position.z += object.userData.velocity.z * 0.1;
-                    object.material.opacity = object.userData.life * 0.7;
-                    object.scale.setScalar(object.userData.growth + (1 - object.userData.life) * 2);
+            }
+        }
+        
+        // Add some decorative blocks around the island edges
+        const decorativeCount = Math.floor(size * 4 * 0.3); // 30% of perimeter
+        for (let i = 0; i < decorativeCount; i++) {
+            const side = Math.floor(Math.random() * 4);
+            let decorX, decorZ;
+            
+            switch(side) {
+                case 0: // Top edge
+                    decorX = offsetX + Math.floor(Math.random() * size);
+                    decorZ = offsetZ;
+                    break;
+                case 1: // Bottom edge
+                    decorX = offsetX + Math.floor(Math.random() * size);
+                    decorZ = offsetZ + size - 1;
+                    break;
+                case 2: // Left edge
+                    decorX = offsetX;
+                    decorZ = offsetZ + Math.floor(Math.random() * size);
+                    break;
+                case 3: // Right edge
+                    decorX = offsetX + size - 1;
+                    decorZ = offsetZ + Math.floor(Math.random() * size);
+                    break;
+            }
+            
+            // Add some variety in rock types
+            if (Math.random() > 0.5) {
+                addBlock(decorX, 1, decorZ, 'Stone');
+                if (Math.random() > 0.7) {
+                    addBlock(decorX, 2, decorZ, 'Stone');
                 }
-                // Handle fire rings
-                else if (object.userData.expandSpeed) {
-                    object.userData.scale += object.userData.expandSpeed * 0.1;
-                    object.scale.setScalar(object.userData.scale);
-                    object.material.opacity = object.userData.life;
+            }
+        }
+    }
+    
+    if (spawnerType) {
+        const s = {
+            x: offsetX + size/2, y: 1, z: offsetZ + size/2,
+            resourceType: spawnerType.type,
+            interval: spawnerType.interval * 1000,
+            lastSpawn: Date.now()
+        };
+        spawners.push(s);
+    }
+}
+
+function initWorld() {
+    blocks.clear();
+    pickups.clear();
+    spawners.length = 0;
+    enderpearls.clear();
+    fireballs.clear();
+    windcharges.clear();
+    breakingAnimations.clear();
+    
+    // Create iron islands (6x6)
+    ironIslands.forEach(island => {
+        createIsland(island.offsetX, island.offsetZ, { type: 'iron', interval: 3 });
+    });
+    
+    // Create gold islands (6x6)
+    goldIslands.forEach(island => {
+        createIsland(island.offsetX, island.offsetZ, { type: 'gold', interval: 8 });
+    });
+    
+    // Create emerald island (20x20 with rocks)
+    createIsland(emeraldIsland.offsetX, emeraldIsland.offsetZ, { type: 'emerald', interval: 10 }, 20, true);
+    
+    occupiedIronIslands = [];
+}
+
+initWorld();
+
+function assignPlayerToIsland(playerId) {
+    for (let i = 0; i < ironIslands.length; i++) {
+        if (!occupiedIronIslands.includes(i)) {
+            const island = ironIslands[i];
+            
+            addBlock(island.bedX, island.bedY, island.bedZ, 'Bed');
+            
+            occupiedIronIslands.push(i);
+            
+            const p = players.get(playerId);
+            p.bedPos = { x: island.bedX, y: island.bedY, z: island.bedZ };
+            p.pos = { x: island.bedX + 0.5, y: island.bedY + 2 + 1.6, z: island.bedZ + 0.5 };
+            p.rot = { yaw: 0, pitch: 0 };
+            p.spectator = false;
+            p.health = PLAYER_MAX_HEALTH;
+            
+            return {
+                bedPos: p.bedPos,
+                pos: p.pos,
+                rot: p.rot,
+                inventory: p.inventory,
+                currency: p.currency
+            };
+        }
+    }
+    return null;
+}
+
+function checkWinCondition() {
+    if (!gameActive) return false;
+    
+    const activePlayers = getActivePlayers();
+    
+    if (activePlayers.length <= 1) {
+        const winnerId = activePlayers.length === 1 ? activePlayers[0].id : null;
+        endGame(winnerId);
+        return true;
+    }
+    
+    return false;
+}
+
+function endGame(winnerId) {
+    if (!gameActive) return;
+    
+    gameActive = false;
+    suddenDeath = false;
+    roundStartTime = null;
+    stopRoundTimer();
+    
+    console.log(`Game ended! Winner: ${winnerId || 'No winner'}`);
+    
+    io.emit('gameEnd', { winner: winnerId });
+    
+    setTimeout(() => {
+        resetGame();
+    }, 5000);
+}
+
+function eliminatePlayer(playerId, eliminatorId) {
+    const p = players.get(playerId);
+    if (!p) return;
+    
+    console.log(`Eliminating player ${playerId}. Eliminator: ${eliminatorId}`);
+    
+    p.spectator = true;
+    p.health = PLAYER_MAX_HEALTH;
+    p.pos = { x: emeraldIsland.offsetX + 10, y: 50, z: emeraldIsland.offsetZ + 10 };
+    
+    if (p.bedPos) {
+        for (let i = 0; i < ironIslands.length; i++) {
+            if (ironIslands[i].bedX === p.bedPos.x && 
+                ironIslands[i].bedY === p.bedPos.y && 
+                ironIslands[i].bedZ === p.bedPos.z) {
+                const index = occupiedIronIslands.indexOf(i);
+                if (index > -1) {
+                    occupiedIronIslands.splice(index, 1);
+                }
+                break;
+            }
+        }
+        p.bedPos = null;
+    }
+    
+    io.to(playerId).emit('setSpectator', true);
+    io.to(playerId).emit('respawn', { 
+        pos: p.pos, 
+        rot: p.rot 
+    });
+    io.to(playerId).emit('notification', 'Eliminated! You are now a spectator.');
+    
+    io.emit('playerEliminated', {
+        eliminatedId: playerId,
+        eliminatorId: eliminatorId
+    });
+    
+    io.emit('removePlayer', playerId);
+    
+    checkWinCondition();
+}
+
+function resetGame() {
+    console.log('Resetting game...');
+    
+    initWorld();
+    
+    const initBlocks = Array.from(blocks, ([key, type]) => {
+        const [x, y, z] = key.split(',').map(Number);
+        return { x, y, z, type };
+    });
+    const initPickups = Array.from(pickups, ([id, data]) => ({ id, ...data }));
+    
+    players.forEach((p, id) => {
+        p.inventory = new Array(INVENTORY_SIZE).fill(null);
+        p.currency = { iron: 0, gold: 0, emerald: 0 };
+        p.selected = 0;
+        p.rot = { yaw: 0, pitch: 0 };
+        p.crouch = false;
+        p.lastRespawn = 0;
+        p.bedPos = null;
+        p.spectator = true;
+        p.health = PLAYER_MAX_HEALTH;
+        p.pos = { x: emeraldIsland.offsetX + 10, y: 50, z: emeraldIsland.offsetZ + 10 };
+        p.equippedWeapon = null;
+        p.lastEnderpearlThrow = 0;
+        p.lastFireballThrow = 0;
+        p.lastWindchargeThrow = 0;
+        
+        io.to(id).emit('setSpectator', true);
+        io.to(id).emit('respawn', {
+            pos: p.pos,
+            rot: p.rot
+        });
+        io.to(id).emit('updateInventory', p.inventory);
+        io.to(id).emit('updateCurrency', p.currency);
+    });
+    
+    io.emit('worldReset', { 
+        blocks: initBlocks, 
+        pickups: initPickups, 
+        spawners: spawners.map(s => ({
+            x: s.x, y: s.y, z: s.z,
+            resourceType: s.resourceType,
+            interval: s.interval / 1000,
+            lastSpawn: s.lastSpawn
+        }))
+    });
+    
+    gameActive = false;
+    suddenDeath = false;
+    roundStartTime = null;
+    stopRoundTimer();
+    
+    startPlayerCheck();
+}
+
+function startPlayerCheck() {
+    if (playerCheckInterval) {
+        clearInterval(playerCheckInterval);
+    }
+    
+    playerCheckInterval = setInterval(() => {
+        if (!gameActive) {
+            const totalPlayers = players.size;
+            const activePlayers = getActivePlayers();
+            
+            console.log(`Player check: ${totalPlayers} total, ${activePlayers.length} active`);
+            
+            if (totalPlayers >= REQUIRED_PLAYERS && activePlayers.length < REQUIRED_PLAYERS && !countdownTimer) {
+                console.log('Starting countdown...');
+                let count = 10;
+                io.emit('notification', 'Game starting in 10 seconds!');
+                
+                countdownTimer = setInterval(() => {
+                    io.emit('countdown', count);
+                    count--;
                     
-                    // Rotate rings
-                    object.rotation.x += object.userData.rotateSpeed || 0;
-                    object.rotation.y += object.userData.rotateSpeed || 0;
+                    if (count < 0) {
+                        clearInterval(countdownTimer);
+                        countdownTimer = null;
+                        
+                        const assignedPlayers = [];
+                        players.forEach((p, id) => {
+                            if (p.spectator) {
+                                const assignment = assignPlayerToIsland(id);
+                                if (assignment) {
+                                    p.spectator = false;
+                                    p.pos = assignment.pos;
+                                    p.rot = assignment.rot;
+                                    p.bedPos = assignment.bedPos;
+                                    p.health = PLAYER_MAX_HEALTH;
+                                    assignedPlayers.push(id);
+                                    
+                                    io.to(id).emit('assignBed', assignment);
+                                    io.to(id).emit('setSpectator', false);
+                                }
+                            }
+                        });
+                        
+                        const activeAfterAssignment = getActivePlayers();
+                        if (activeAfterAssignment.length >= REQUIRED_PLAYERS) {
+                            gameActive = true;
+                            roundStartTime = Date.now();
+                            
+                            spawners.forEach(s => s.lastSpawn = Date.now());
+                            
+                            startRoundTimer();
+                            
+                            io.emit('gameStart');
+                        } else {
+                            io.emit('notification', 'Not enough players assigned. Waiting...');
+                            assignedPlayers.forEach(id => {
+                                const p = players.get(id);
+                                p.spectator = true;
+                                p.bedPos = null;
+                                io.to(id).emit('setSpectator', true);
+                            });
+                            occupiedIronIslands = [];
+                            initWorld();
+                        }
+                    }
+                }, 1000);
+            }
+        } else {
+            checkWinCondition();
+        }
+    }, 1000);
+}
+
+function validateBlockBreaking(playerId, x, y, z, type) {
+    const p = players.get(playerId);
+    if (!p || p.spectator) return false;
+    
+    const key = blockKey(x, y, z);
+    if (!blocks.has(key)) return false;
+    
+    const blockType = blocks.get(key);
+    if (blockType !== type) return false;
+    
+    const eyeHeight = p.crouch ? 1.3 : 1.6;
+    const playerEyeY = p.pos.y;
+    const blockCenterY = y + 0.5;
+    
+    const dist = Math.hypot(
+        p.pos.x - (x + 0.5),
+        playerEyeY - blockCenterY,
+        p.pos.z - (z + 0.5)
+    );
+    
+    return dist <= 5.5;
+}
+
+function processBlockBreak(playerId, x, y, z) {
+    const p = players.get(playerId);
+    if (!p || p.spectator) return false;
+    
+    const key = blockKey(x, y, z);
+    if (!blocks.has(key)) return false;
+    
+    const type = blocks.get(key);
+    
+    if (type === 'Bed') {
+        if (p.bedPos && p.bedPos.x === x && p.bedPos.y === y && p.bedPos.z === z) {
+            return false;
+        }
+        
+        removeBlock(x, y, z);
+        return true;
+    }
+    
+    if (addToInventory(p.inventory, type, 1)) {
+        removeBlock(x, y, z);
+        io.to(playerId).emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
+        return true;
+    }
+    
+    return false;
+}
+
+function applyKnockback(target, sourcePos, force, upwardBoost = 0.3, overrideY = false) {
+    let dx = target.pos.x - sourcePos.x;
+    let dy = target.pos.y - sourcePos.y;
+    let dz = target.pos.z - sourcePos.z;
+    
+    if (Math.abs(dx) < 0.001 && Math.abs(dz) < 0.001) {
+        dx = (Math.random() - 0.5) * 0.1;
+        dz = (Math.random() - 0.5) * 0.1;
+    }
+    
+    const horizontalDist = Math.sqrt(dx * dx + dz * dz);
+    
+    const normalizedX = dx / horizontalDist;
+    const normalizedZ = dz / horizontalDist;
+    
+    const newPos = {
+        x: target.pos.x + normalizedX * force,
+        y: target.pos.y + (overrideY ? upwardBoost : Math.max(upwardBoost, Math.abs(dy) * 0.3)),
+        z: target.pos.z + normalizedZ * force
+    };
+    
+    target.pos = newPos;
+    
+    console.log(`Knockback applied: force=${force}, pos change: x=${normalizedX * force}, y=${upwardBoost}, z=${normalizedZ * force}`);
+    
+    io.to(target.id).emit('teleport', newPos);
+}
+
+function applyExplosionKnockback(target, explosionPos, radius, force) {
+    const dx = target.pos.x - explosionPos.x;
+    const dy = target.pos.y - explosionPos.y;
+    const dz = target.pos.z - explosionPos.z;
+    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    
+    if (distance === 0 || distance > radius) return;
+    
+    const distanceFactor = 1 - (distance / radius);
+    const actualForce = force * distanceFactor;
+    
+    const normalizedX = dx / distance;
+    const normalizedY = dy / distance;
+    const normalizedZ = dz / distance;
+    
+    const newPos = {
+        x: target.pos.x + normalizedX * actualForce,
+        y: target.pos.y + Math.max(normalizedY * actualForce, 0.3),
+        z: target.pos.z + normalizedZ * actualForce
+    };
+    
+    target.pos = newPos;
+    
+    console.log(`Explosion knockback: force=${actualForce}, distanceFactor=${distanceFactor}`);
+    
+    io.to(target.id).emit('teleport', newPos);
+}
+
+io.on('connection', (socket) => {
+    console.log(`New connection: ${socket.id}`);
+    
+    const playerState = {
+        pos: { x: emeraldIsland.offsetX + 10, y: 50, z: emeraldIsland.offsetZ + 10 },
+        rot: { yaw: 0, pitch: 0 },
+        crouch: false,
+        inventory: new Array(INVENTORY_SIZE).fill(null),
+        currency: { iron: 0, gold: 0, emerald: 0 },
+        selected: 0,
+        bedPos: null,
+        lastRespawn: 0,
+        spectator: true,
+        health: PLAYER_MAX_HEALTH,
+        id: socket.id,
+        lastHitTime: 0,
+        equippedWeapon: null,
+        lastEnderpearlThrow: 0,
+        lastFireballThrow: 0,
+        lastWindchargeThrow: 0
+    };
+    
+    players.set(socket.id, playerState);
+
+    const initBlocks = Array.from(blocks, ([key, type]) => {
+        const [x, y, z] = key.split(',').map(Number);
+        return { x, y, z, type };
+    });
+    const initPickups = Array.from(pickups, ([id, data]) => ({ id, ...data }));
+    
+    socket.emit('initWorld', { 
+        blocks: initBlocks, 
+        pickups: initPickups, 
+        spawners: spawners.map(s => ({
+            x: s.x, y: s.y, z: s.z,
+            resourceType: s.resourceType,
+            interval: s.interval / 1000,
+            lastSpawn: s.lastSpawn
+        })),
+        gameActive,
+        playersNeeded: getPlayersNeeded()
+    });
+
+    socket.emit('yourId', socket.id);
+    socket.emit('setSpectator', true);
+
+    const otherPlayers = Array.from(players.entries())
+        .filter(([id]) => id !== socket.id)
+        .filter(([_, p]) => !p.spectator)
+        .map(([id, p]) => ({ 
+            id, 
+            pos: p.pos, 
+            rot: p.rot, 
+            crouch: p.crouch,
+            spectator: p.spectator,
+            health: p.health,
+            equippedWeapon: p.equippedWeapon
+        }));
+    socket.emit('playersSnapshot', otherPlayers);
+
+    socket.broadcast.emit('newPlayer', { 
+        id: socket.id, 
+        pos: playerState.pos, 
+        rot: playerState.rot, 
+        crouch: playerState.crouch,
+        spectator: playerState.spectator,
+        health: playerState.health,
+        equippedWeapon: playerState.equippedWeapon
+    });
+
+    updateWaitingMessages();
+
+    if (!playerCheckInterval) {
+        startPlayerCheck();
+    }
+
+    socket.on('playerUpdate', (data) => {
+        const p = players.get(socket.id);
+        if (p) {
+            p.pos = data.pos;
+            p.rot = data.rot;
+            p.crouch = data.crouch;
+            p.selected = data.selected;
+            p.spectator = data.spectator;
+            p.equippedWeapon = data.equippedWeapon;
+        }
+    });
+
+    socket.on('claimPickupAttempt', (id) => {
+        if (!pickups.has(id)) return;
+        
+        const p = players.get(socket.id);
+        if (p.spectator) return;
+        
+        const pickup = pickups.get(id);
+        const dist = Math.hypot(p.pos.x - pickup.x, p.pos.y - pickup.y, p.pos.z - pickup.z);
+        
+        if (dist >= 1.5) {
+            socket.emit('revertPickup', { id, x: pickup.x, y: pickup.y, z: pickup.z, resourceType: pickup.resourceType });
+            return;
+        }
+        
+        const res = pickup.resourceType;
+        p.currency[res] = (p.currency[res] || 0) + 1;
+        pickups.delete(id);
+        io.emit('removePickup', id);
+        socket.emit('updateCurrency', { ...p.currency });
+    });
+
+    socket.on('breakAttempt', ({ x, y, z }) => {
+        const p = players.get(socket.id);
+        if (p.spectator) return;
+        
+        const key = blockKey(x, y, z);
+        if (!blocks.has(key)) {
+            socket.emit('revertBreak', { x, y, z, type: null });
+            return;
+        }
+        
+        const type = blocks.get(key);
+        
+        if (!validateBlockBreaking(socket.id, x, y, z, type)) {
+            socket.emit('revertBreak', { x, y, z, type });
+            return;
+        }
+        
+        if (processBlockBreak(socket.id, x, y, z)) {
+            return;
+        } else {
+            socket.emit('revertBreak', { x, y, z, type });
+        }
+    });
+
+    socket.on('placeAttempt', ({ x, y, z, type }) => {
+        const p = players.get(socket.id);
+        if (p.spectator) return;
+        
+        const blockData = BLOCK_TYPES[type];
+        if (blockData && (blockData.isItem || blockData.isWeapon || blockData.isTool)) {
+            socket.emit('revertPlace', { x, y, z });
+            socket.emit('notification', 'Cannot place items! Use Q to drop them.');
+            return;
+        }
+        
+        const key = blockKey(x, y, z);
+        if (blocks.has(key)) {
+            socket.emit('revertPlace', { x, y, z });
+            return;
+        }
+        
+        const slot = p.inventory[p.selected];
+        if (!slot || slot.type !== type || slot.count < 1) {
+            socket.emit('revertPlace', { x, y, z });
+            return;
+        }
+        
+        const eyeHeight = p.crouch ? 1.3 : 1.6;
+        const playerEyeY = p.pos.y;
+        const blockCenterY = y + 0.5;
+        
+        const dist = Math.hypot(
+            p.pos.x - (x + 0.5),
+            playerEyeY - blockCenterY,
+            p.pos.z - (z + 0.5)
+        );
+        
+        if (dist > 5.5) {
+            socket.emit('revertPlace', { x, y, z });
+            socket.emit('notification', 'Too far away!');
+            return;
+        }
+        
+        slot.count--;
+        if (slot.count === 0) {
+            p.inventory[p.selected] = null;
+            if (BLOCK_TYPES[type] && BLOCK_TYPES[type].isWeapon && p.selected === p.selected) {
+                p.equippedWeapon = null;
+            }
+        }
+        addBlock(x, y, z, type);
+        socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
+    });
+
+    socket.on('dropItem', () => {
+        const p = players.get(socket.id);
+        if (p.spectator || !p.inventory[p.selected]) return;
+        
+        const slot = p.inventory[p.selected];
+        if (!slot) return;
+        
+        slot.count--;
+        
+        if (slot.count <= 0) {
+            p.inventory[p.selected] = null;
+            
+            if (BLOCK_TYPES[slot.type] && BLOCK_TYPES[slot.type].isWeapon) {
+                p.equippedWeapon = null;
+            }
+        }
+        
+        socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
+        
+        socket.emit('notification', `Dropped ${slot.type}`);
+    });
+
+    socket.on('buyAttempt', (btype) => {
+        const p = players.get(socket.id);
+        if (p.spectator) return;
+        
+        if (btype === 'Bed') {
+            socket.emit('buyFailed');
+            return;
+        }
+        
+        const data = BLOCK_TYPES[btype];
+        if (!data) {
+            socket.emit('buyFailed');
+            return;
+        }
+        
+        if (!canAfford(p.currency, data.cost)) {
+            socket.emit('buyFailed');
+            return;
+        }
+        
+        if (!addToInventory(p.inventory, btype, data.buyAmount)) {
+            socket.emit('buyFailed');
+            return;
+        }
+        
+        deductCurrency(p.currency, data.cost);
+        socket.emit('updateCurrency', { ...p.currency });
+        socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
+        
+        if (data.isWeapon && p.selected !== null) {
+            const slot = p.inventory[p.selected];
+            if (slot && slot.type === btype) {
+                p.equippedWeapon = btype;
+            }
+        }
+    });
+
+    socket.on('hitPlayer', (targetId) => {
+        const attacker = players.get(socket.id);
+        const target = players.get(targetId);
+        
+        if (!attacker || !target || attacker.spectator || target.spectator) return;
+        if (attacker.id === target.id) return;
+        
+        const now = Date.now();
+        if (now - attacker.lastHitTime < 500) return;
+        
+        const dx = attacker.pos.x - target.pos.x;
+        const dy = attacker.pos.y - target.pos.y;
+        const dz = attacker.pos.z - target.pos.z;
+        const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        
+        if (dist > 5) {
+            socket.emit('notification', 'Too far away!');
+            return;
+        }
+        
+        let damage = 1;
+        if (attacker.equippedWeapon) {
+            const weaponData = BLOCK_TYPES[attacker.equippedWeapon];
+            if (weaponData && weaponData.isWeapon) {
+                damage = weaponData.damage;
+            }
+        }
+        
+        target.health -= damage;
+        attacker.lastHitTime = now;
+        
+        applyKnockback(target, attacker.pos, 1.5, 0.4);
+        
+        io.emit('playerHit', {
+            attackerId: attacker.id,
+            targetId: target.id,
+            newHealth: target.health
+        });
+        
+        console.log(`Sword hit: ${attacker.id} hit ${target.id} for ${damage} damage`);
+        
+        if (target.health <= 0) {
+            const bedKey = target.bedPos ? blockKey(target.bedPos.x, target.bedPos.y, target.bedPos.z) : null;
+            const hasBed = target.bedPos && blocks.get(bedKey) === 'Bed';
+            
+            if (hasBed) {
+                target.health = PLAYER_MAX_HEALTH;
+                
+                target.pos.x = target.bedPos.x + 0.5;
+                target.pos.y = target.bedPos.y + 2 + 1.6;
+                target.pos.z = target.bedPos.z + 0.5;
+                target.rot.yaw = 0;
+                target.rot.pitch = 0;
+                
+                io.to(targetId).emit('teleport', {
+                    x: target.pos.x,
+                    y: target.pos.y,
+                    z: target.pos.z
+                });
+                
+                io.emit('playerHit', {
+                    attackerId: null,
+                    targetId: target.id,
+                    newHealth: target.health
+                });
+                
+                io.to(targetId).emit('notification', 'You died and respawned at your bed! Health restored to 10!');
+            } else {
+                eliminatePlayer(targetId, attacker.id);
+            }
+        }
+    });
+
+    socket.on('throwEnderpearl', (targetPos) => {
+        const p = players.get(socket.id);
+        if (p.spectator) return;
+        
+        const slot = p.inventory[p.selected];
+        if (!slot || slot.type !== 'Enderpearl' || slot.count < 1) {
+            socket.emit('notification', 'No Enderpearl in selected slot!');
+            return;
+        }
+        
+        const now = Date.now();
+        if (now - p.lastEnderpearlThrow < 1000) {
+            socket.emit('notification', 'Enderpearl cooldown!');
+            return;
+        }
+        
+        slot.count--;
+        if (slot.count === 0) {
+            p.inventory[p.selected] = null;
+        }
+        
+        p.lastEnderpearlThrow = now;
+        
+        socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
+        
+        const pearlId = `pearl-${socket.id}-${now}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        const startPos = {
+            x: p.pos.x,
+            y: p.pos.y,
+            z: p.pos.z
+        };
+        
+        const direction = {
+            x: targetPos.x - startPos.x,
+            y: targetPos.y - startPos.y,
+            z: targetPos.z - startPos.z
+        };
+        
+        const length = Math.sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
+        const speed = 25;
+        const velocity = {
+            x: (direction.x / length) * speed,
+            y: (direction.y / length) * speed,
+            z: (direction.z / length) * speed
+        };
+        
+        const pearl = {
+            id: pearlId,
+            owner: socket.id,
+            pos: startPos,
+            velocity: velocity,
+            createdAt: now,
+            lastUpdate: now,
+            arrived: false,
+            hit: false
+        };
+        
+        enderpearls.set(pearlId, pearl);
+        
+        io.emit('addEnderpearl', {
+            id: pearl.id,
+            x: startPos.x,
+            y: startPos.y,
+            z: startPos.z,
+            velocity: velocity,
+            owner: socket.id
+        });
+    });
+
+    socket.on('throwFireball', (targetPos) => {
+        const p = players.get(socket.id);
+        if (p.spectator) return;
+        
+        const slot = p.inventory[p.selected];
+        if (!slot || slot.type !== 'Fireball' || slot.count < 1) {
+            socket.emit('notification', 'No Fireball in selected slot!');
+            return;
+        }
+        
+        const now = Date.now();
+        if (now - p.lastFireballThrow < 100) {
+            socket.emit('notification', 'Fireball cooldown!');
+            return;
+        }
+        
+        slot.count--;
+        if (slot.count === 0) {
+            p.inventory[p.selected] = null;
+        }
+        
+        p.lastFireballThrow = now;
+        
+        socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
+        
+        const fireballId = `fireball-${socket.id}-${now}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        const startPos = {
+            x: p.pos.x,
+            y: p.pos.y,
+            z: p.pos.z
+        };
+        
+        const direction = {
+            x: targetPos.x - startPos.x,
+            y: targetPos.y - startPos.y,
+            z: targetPos.z - startPos.z
+        };
+        
+        const length = Math.sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
+        const speed = 20;
+        const velocity = {
+            x: (direction.x / length) * speed,
+            y: (direction.y / length) * speed,
+            z: (direction.z / length) * speed
+        };
+        
+        const fireball = {
+            id: fireballId,
+            owner: socket.id,
+            pos: startPos,
+            velocity: velocity,
+            createdAt: now,
+            lastUpdate: now,
+            arrived: false,
+            hit: false
+        };
+        
+        fireballs.set(fireballId, fireball);
+        
+        io.emit('addFireball', {
+            id: fireball.id,
+            x: startPos.x,
+            y: startPos.y,
+            z: startPos.z,
+            velocity: velocity,
+            owner: socket.id
+        });
+    });
+
+    socket.on('throwWindcharge', (targetPos) => {
+        const p = players.get(socket.id);
+        if (p.spectator) return;
+        
+        const slot = p.inventory[p.selected];
+        if (!slot || slot.type !== 'Wind Charge' || slot.count < 1) {
+            socket.emit('notification', 'No Wind Charge in selected slot!');
+            return;
+        }
+        
+        const now = Date.now();
+        if (now - p.lastWindchargeThrow < 100) {
+            socket.emit('notification', 'Wind Charge cooldown!');
+            return;
+        }
+        
+        slot.count--;
+        if (slot.count === 0) {
+            p.inventory[p.selected] = null;
+        }
+        
+        p.lastWindchargeThrow = now;
+        
+        socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
+        
+        const windchargeId = `windcharge-${socket.id}-${now}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        const startPos = {
+            x: p.pos.x,
+            y: p.pos.y,
+            z: p.pos.z
+        };
+        
+        const direction = {
+            x: targetPos.x - startPos.x,
+            y: targetPos.y - startPos.y,
+            z: targetPos.z - startPos.z
+        };
+        
+        const length = Math.sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
+        const speed = 22;
+        const velocity = {
+            x: (direction.x / length) * speed,
+            y: (direction.y / length) * speed,
+            z: (direction.z / length) * speed
+        };
+        
+        const windcharge = {
+            id: windchargeId,
+            owner: socket.id,
+            pos: startPos,
+            velocity: velocity,
+            createdAt: now,
+            lastUpdate: now,
+            arrived: false,
+            hit: false
+        };
+        
+        windcharges.set(windchargeId, windcharge);
+        
+        io.emit('addWindcharge', {
+            id: windcharge.id,
+            x: startPos.x,
+            y: startPos.y,
+            z: startPos.z,
+            velocity: velocity,
+            owner: socket.id
+        });
+    });
+
+    socket.on('fireballHitBlock', ({ fireballId, x, y, z }) => {
+        const fireball = fireballs.get(fireballId);
+        if (!fireball) return;
+        
+        const explosionPos = { x: x + 0.5, y: y + 0.5, z: z + 0.5 };
+        const explosionRadius = 3;
+        const explosionForce = 3;
+        
+        players.forEach((player, playerId) => {
+            if (player.spectator) return;
+            
+            applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
+        });
+        
+        const blocksDestroyed = [];
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                    const blockX = x + dx;
+                    const blockY = y + dy;
+                    const blockZ = z + dz;
+                    const key = blockKey(blockX, blockY, blockZ);
                     
-                    // Move upward
-                    object.position.y += 0.03;
+                    if (blocks.has(key)) {
+                        const blockType = blocks.get(key);
+                        
+                        if (blockType === 'Bed') {
+                            const player = players.get(fireball.owner);
+                            if (player && player.bedPos && 
+                                player.bedPos.x === blockX && 
+                                player.bedPos.y === blockY && 
+                                player.bedPos.z === blockZ) {
+                                continue;
+                            }
+                        }
+                        
+                        removeBlock(blockX, blockY, blockZ);
+                        blocksDestroyed.push({ x: blockX, y: blockY, z: blockZ, type: blockType });
+                    }
+                }
+            }
+        }
+        
+        io.emit('fireballExplosion', {
+            x: x,
+            y: y,
+            z: z,
+            blocksDestroyed: blocksDestroyed
+        });
+        
+        fireballs.delete(fireballId);
+        io.emit('removeFireball', fireballId);
+    });
+
+    socket.on('windchargeExplosion', ({ x, y, z, blocksDestroyed }) => {
+        io.emit('windchargeExplosion', {
+            x: x,
+            y: y,
+            z: z
+        });
+    });
+
+    socket.on('startBreaking', ({ x, y, z, breakTime }) => {
+        const p = players.get(socket.id);
+        if (p.spectator) return;
+        
+        breakingAnimations.set(socket.id, {
+            x, y, z,
+            progress: 0,
+            lastUpdate: Date.now(),
+            breakTime
+        });
+        
+        socket.broadcast.emit('startBreaking', {
+            x, y, z,
+            playerId: socket.id,
+            breakTime
+        });
+    });
+
+    socket.on('breakingProgress', ({ x, y, z, progress }) => {
+        const p = players.get(socket.id);
+        if (p.spectator) return;
+        
+        if (breakingAnimations.has(socket.id)) {
+            const anim = breakingAnimations.get(socket.id);
+            anim.x = x;
+            anim.y = y;
+            anim.z = z;
+            anim.progress = progress;
+            anim.lastUpdate = Date.now();
+            
+            socket.broadcast.emit('breakingProgress', {
+                x, y, z,
+                playerId: socket.id,
+                progress
+            });
+        }
+    });
+
+    socket.on('stopBreaking', ({ x, y, z }) => {
+        if (breakingAnimations.has(socket.id)) {
+            breakingAnimations.delete(socket.id);
+            
+            socket.broadcast.emit('stopBreaking', {
+                x, y, z,
+                playerId: socket.id
+            });
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log(`Disconnected: ${socket.id}`);
+        
+        const p = players.get(socket.id);
+        if (p) {
+            players.delete(socket.id);
+            io.emit('removePlayer', socket.id);
+            
+            if (breakingAnimations.has(socket.id)) {
+                const anim = breakingAnimations.get(socket.id);
+                socket.broadcast.emit('stopBreaking', {
+                    x: anim.x,
+                    y: anim.y,
+                    z: anim.z,
+                    playerId: socket.id
+                });
+                breakingAnimations.delete(socket.id);
+            }
+            
+            if (p.bedPos) {
+                removeBlock(p.bedPos.x, p.bedPos.y, p.bedPos.z);
+                
+                for (let i = 0; i < ironIslands.length; i++) {
+                    if (ironIslands[i].bedX === p.bedPos.x && 
+                        ironIslands[i].bedY === p.bedPos.y && 
+                        ironIslands[i].bedZ === p.bedPos.z) {
+                        const index = occupiedIronIslands.indexOf(i);
+                        if (index > -1) {
+                            occupiedIronIslands.splice(index, 1);
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            if (gameActive && !p.spectator) {
+                console.log(`Active player disconnected. Checking win condition...`);
+                checkWinCondition();
+            }
+            
+            updateWaitingMessages();
+            
+            if (!gameActive && countdownTimer) {
+                const activePlayers = getActivePlayers();
+                if (activePlayers.length < REQUIRED_PLAYERS) {
+                    clearInterval(countdownTimer);
+                    countdownTimer = null;
+                    io.emit('notification', 'Player left. Countdown cancelled.');
+                    occupiedIronIslands = [];
+                    initWorld();
+                }
+            }
+        }
+    });
+});
+
+setInterval(() => {
+    const now = Date.now();
+    
+    if (gameActive) {
+        spawners.forEach((s) => {
+            if (now - s.lastSpawn >= s.interval) {
+                spawnPickup(s.x, s.y + 0.8, s.z, s.resourceType);
+                s.lastSpawn = now;
+            }
+        });
+        
+        const elapsed = now - roundStartTime;
+        if (!suddenDeath && elapsed >= BED_DESTRUCTION_TIME) {
+            Array.from(blocks.entries()).filter(([_, type]) => type === 'Bed').forEach(([key]) => {
+                const [x, y, z] = key.split(',').map(Number);
+                removeBlock(x, y, z);
+            });
+            io.emit('notification', 'Beds destroyed - SUDDEN DEATH');
+            suddenDeath = true;
+        }
+
+        const pearlUpdates = [];
+        const pearlRemovals = [];
+        
+        enderpearls.forEach((pearl, id) => {
+            if (pearl.arrived || pearl.hit) return;
+            
+            const deltaTime = (now - pearl.lastUpdate) / 1000;
+            pearl.lastUpdate = now;
+            
+            const GRAVITY = 20;
+            pearl.velocity.y -= GRAVITY * deltaTime;
+            
+            pearl.pos.x += pearl.velocity.x * deltaTime;
+            pearl.pos.y += pearl.velocity.y * deltaTime;
+            pearl.pos.z += pearl.velocity.z * deltaTime;
+            
+            const blockX = Math.floor(pearl.pos.x);
+            const blockY = Math.floor(pearl.pos.y);
+            const blockZ = Math.floor(pearl.pos.z);
+            const blockKeyStr = blockKey(blockX, blockY, blockZ);
+            
+            if (blocks.has(blockKeyStr) && now - pearl.createdAt > 200) {
+                pearl.hit = true;
+                
+                const player = players.get(pearl.owner);
+                if (player && !player.spectator) {
+                    const safePos = {
+                        x: pearl.pos.x - pearl.velocity.x * deltaTime,
+                        y: pearl.pos.y - pearl.velocity.y * deltaTime + 1.0,
+                        z: pearl.pos.z - pearl.velocity.z * deltaTime
+                    };
+                    
+                    let teleportY = safePos.y;
+                    const checkX = Math.floor(safePos.x);
+                    const checkZ = Math.floor(safePos.z);
+                    
+                    for (let y = Math.floor(teleportY); y < Math.floor(teleportY) + 3; y++) {
+                        if (blocks.has(blockKey(checkX, y, checkZ))) {
+                            teleportY = y + 1.5;
+                        }
+                    }
+                    
+                    player.pos.x = safePos.x;
+                    player.pos.y = teleportY;
+                    player.pos.z = safePos.z;
+                    
+                    io.to(pearl.owner).emit('teleport', {
+                        x: player.pos.x,
+                        y: player.pos.y,
+                        z: player.pos.z
+                    });
+                    
+                    io.to(pearl.owner).emit('notification', 'Ender pearl teleport!');
+                }
+                
+                pearl.arrived = true;
+                pearlRemovals.push(id);
+            } else if (pearl.pos.y < -50 || now - pearl.createdAt > 10000) {
+                pearl.arrived = true;
+                pearlRemovals.push(id);
+            } else {
+                pearlUpdates.push({
+                    id: pearl.id,
+                    x: pearl.pos.x,
+                    y: pearl.pos.y,
+                    z: pearl.pos.z
+                });
+            }
+        });
+        
+        if (pearlUpdates.length > 0) {
+            io.emit('updateEnderpearl', pearlUpdates);
+        }
+        
+        pearlRemovals.forEach(id => {
+            enderpearls.delete(id);
+            io.emit('removeEnderpearl', id);
+        });
+
+        const fireballUpdates = [];
+        const fireballRemovals = [];
+        
+        fireballs.forEach((fireball, id) => {
+            if (fireball.arrived || fireball.hit) return;
+            
+            const deltaTime = (now - fireball.lastUpdate) / 1000;
+            fireball.lastUpdate = now;
+            
+            const prevPos = { ...fireball.pos };
+            
+            const GRAVITY = 10;
+            fireball.velocity.y -= GRAVITY * deltaTime;
+            
+            fireball.pos.x += fireball.velocity.x * deltaTime;
+            fireball.pos.y += fireball.velocity.y * deltaTime;
+            fireball.pos.z += fireball.velocity.z * deltaTime;
+            
+            let directHitPlayer = null;
+            const playerHitRadius = 1.0;
+            
+            players.forEach((player, playerId) => {
+                if (player.spectator || playerId === fireball.owner) return;
+                
+                const dx = fireball.pos.x - player.pos.x;
+                const dy = fireball.pos.y - (player.pos.y - 0.9);
+                const dz = fireball.pos.z - player.pos.z;
+                const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                
+                if (distance < playerHitRadius) {
+                    directHitPlayer = { id: playerId, player: player };
+                }
+            });
+            
+            if (directHitPlayer) {
+                directHitPlayer.player.health -= 6;
+                
+                applyKnockback(directHitPlayer.player, fireball.pos, 8.0, 1.5, true);
+                
+                io.emit('playerHit', {
+                    attackerId: fireball.owner,
+                    targetId: directHitPlayer.id,
+                    newHealth: directHitPlayer.player.health
+                });
+                
+                console.log(`Fireball direct hit: ${directHitPlayer.id} hit for 6 damage`);
+                
+                if (directHitPlayer.player.health <= 0) {
+                    const bedKey = directHitPlayer.player.bedPos ? 
+                        blockKey(directHitPlayer.player.bedPos.x, directHitPlayer.player.bedPos.y, directHitPlayer.player.bedPos.z) : null;
+                    const hasBed = directHitPlayer.player.bedPos && blocks.get(bedKey) === 'Bed';
+                    
+                    if (hasBed) {
+                        directHitPlayer.player.health = PLAYER_MAX_HEALTH;
+                        
+                        directHitPlayer.player.pos.x = directHitPlayer.player.bedPos.x + 0.5;
+                        directHitPlayer.player.pos.y = directHitPlayer.player.bedPos.y + 2 + 1.6;
+                        directHitPlayer.player.pos.z = directHitPlayer.player.bedPos.z + 0.5;
+                        directHitPlayer.player.rot.yaw = 0;
+                        directHitPlayer.player.rot.pitch = 0;
+                        
+                        io.to(directHitPlayer.id).emit('teleport', {
+                            x: directHitPlayer.player.pos.x,
+                            y: directHitPlayer.player.pos.y,
+                            z: directHitPlayer.player.pos.z
+                        });
+                        
+                        io.emit('playerHit', {
+                            attackerId: fireball.owner,
+                            targetId: directHitPlayer.id,
+                            newHealth: directHitPlayer.player.health
+                        });
+                        
+                        io.to(directHitPlayer.id).emit('notification', 'You died from a fireball and respawned at your bed! Health restored to 10!');
+                    } else {
+                        eliminatePlayer(directHitPlayer.id, fireball.owner);
+                    }
+                }
+                
+                const explosionX = Math.floor(fireball.pos.x);
+                const explosionY = Math.floor(fireball.pos.y);
+                const explosionZ = Math.floor(fireball.pos.z);
+                
+                const blocksDestroyed = [];
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dz = -1; dz <= 1; dz++) {
+                            const x = explosionX + dx;
+                            const y = explosionY + dy;
+                            const z = explosionZ + dz;
+                            const key = blockKey(x, y, z);
+                            
+                            if (blocks.has(key)) {
+                                const blockType = blocks.get(key);
+                                
+                                if (blockType === 'Bed') {
+                                    const player = players.get(fireball.owner);
+                                    if (player && player.bedPos && 
+                                        player.bedPos.x === x && 
+                                        player.bedPos.y === y && 
+                                        player.bedPos.z === z) {
+                                        continue;
+                                    }
+                                }
+                                
+                                removeBlock(x, y, z);
+                                blocksDestroyed.push({ x, y, z, type: blockType });
+                            }
+                        }
+                    }
+                }
+                
+                const explosionPos = { x: explosionX + 0.5, y: explosionY + 0.5, z: explosionZ + 0.5 };
+                const explosionRadius = 3;
+                const explosionForce = 3;
+                
+                players.forEach((player, playerId) => {
+                    if (player.spectator) return;
+                    
+                    applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
+                });
+                
+                io.emit('fireballExplosion', {
+                    x: explosionX,
+                    y: explosionY,
+                    z: explosionZ,
+                    blocksDestroyed: blocksDestroyed
+                });
+                
+                fireball.hit = true;
+                fireball.arrived = true;
+                fireballRemovals.push(id);
+            } else {
+                const dx = fireball.pos.x - prevPos.x;
+                const dy = fireball.pos.y - prevPos.y;
+                const dz = fireball.pos.z - prevPos.z;
+                const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                
+                if (distance > 0) {
+                    const steps = Math.ceil(distance * 2);
+                    let hitBlock = null;
+                    
+                    for (let i = 0; i <= steps; i++) {
+                        const t = i / steps;
+                        const checkX = prevPos.x + dx * t;
+                        const checkY = prevPos.y + dy * t;
+                        const checkZ = prevPos.z + dz * t;
+                        
+                        const blockX = Math.floor(checkX);
+                        const blockY = Math.floor(checkY);
+                        const blockZ = Math.floor(checkZ);
+                        const blockKeyStr = blockKey(blockX, blockY, blockZ);
+                        
+                        if (blocks.has(blockKeyStr)) {
+                            hitBlock = { x: blockX, y: blockY, z: blockZ };
+                            break;
+                        }
+                    }
+                    
+                    if (hitBlock) {
+                        fireball.hit = true;
+                        
+                        const explosionPos = { x: hitBlock.x + 0.5, y: hitBlock.y + 0.5, z: hitBlock.z + 0.5 };
+                        const explosionRadius = 3;
+                        const explosionForce = 3;
+                        
+                        players.forEach((player, playerId) => {
+                            if (player.spectator) return;
+                            
+                            applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
+                        });
+                        
+                        const blocksDestroyed = [];
+                        for (let dx = -1; dx <= 1; dx++) {
+                            for (let dy = -1; dy <= 1; dy++) {
+                                for (let dz = -1; dz <= 1; dz++) {
+                                    const x = hitBlock.x + dx;
+                                    const y = hitBlock.y + dy;
+                                    const z = hitBlock.z + dz;
+                                    const key = blockKey(x, y, z);
+                                    
+                                    if (blocks.has(key)) {
+                                        const blockType = blocks.get(key);
+                                        
+                                        if (blockType === 'Bed') {
+                                            const player = players.get(fireball.owner);
+                                            if (player && player.bedPos && 
+                                                player.bedPos.x === x && 
+                                                player.bedPos.y === y && 
+                                                player.bedPos.z === z) {
+                                                continue;
+                                            }
+                                        }
+                                        
+                                        removeBlock(x, y, z);
+                                        blocksDestroyed.push({ x, y, z, type: blockType });
+                                    }
+                                }
+                            }
+                        }
+                        
+                        io.emit('fireballExplosion', {
+                            x: hitBlock.x,
+                            y: hitBlock.y,
+                            z: hitBlock.z,
+                            blocksDestroyed: blocksDestroyed
+                        });
+                        
+                        fireball.arrived = true;
+                        fireballRemovals.push(id);
+                    } else if (fireball.pos.y < -50 || now - fireball.createdAt > 10000) {
+                        fireball.arrived = true;
+                        fireballRemovals.push(id);
+                    } else {
+                        fireballUpdates.push({
+                            id: fireball.id,
+                            x: fireball.pos.x,
+                            y: fireball.pos.y,
+                            z: fireball.pos.z
+                        });
+                    }
+                } else if (fireball.pos.y < -50 || now - fireball.createdAt > 10000) {
+                    fireball.arrived = true;
+                    fireballRemovals.push(id);
+                } else {
+                    fireballUpdates.push({
+                        id: fireball.id,
+                        x: fireball.pos.x,
+                        y: fireball.pos.y,
+                        z: fireball.pos.z
+                    });
                 }
             }
         });
         
-        if (!allDead) {
-            requestAnimationFrame(animateExplosion);
-        } else {
-            scene.remove(explosionGroup);
-            explosionGroup.children.forEach(object => {
-                object.geometry.dispose();
-                object.material.dispose();
+        if (fireballUpdates.length > 0) {
+            io.emit('updateFireball', fireballUpdates);
+        }
+        
+        fireballRemovals.forEach(id => {
+            fireballs.delete(id);
+            io.emit('removeFireball', id);
+        });
+
+        const windchargeUpdates = [];
+        const windchargeRemovals = [];
+        
+        windcharges.forEach((windcharge, id) => {
+            if (windcharge.arrived || windcharge.hit) return;
+            
+            const deltaTime = (now - windcharge.lastUpdate) / 1000;
+            windcharge.lastUpdate = now;
+            
+            const prevPos = { ...windcharge.pos };
+            
+            const GRAVITY = 2;
+            windcharge.velocity.y -= GRAVITY * deltaTime;
+            
+            windcharge.pos.x += windcharge.velocity.x * deltaTime;
+            windcharge.pos.y += windcharge.velocity.y * deltaTime;
+            windcharge.pos.z += windcharge.velocity.z * deltaTime;
+            
+            let directHitPlayer = null;
+            const playerHitRadius = 1.0;
+            
+            players.forEach((player, playerId) => {
+                if (player.spectator || playerId === windcharge.owner) return;
+                
+                const dx = windcharge.pos.x - player.pos.x;
+                const dy = windcharge.pos.y - (player.pos.y - 0.9);
+                const dz = windcharge.pos.z - player.pos.z;
+                const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                
+                if (distance < playerHitRadius) {
+                    directHitPlayer = { id: playerId, player: player };
+                }
             });
+            
+            if (directHitPlayer) {
+                windcharge.hit = true;
+                
+                applyKnockback(directHitPlayer.player, windcharge.pos, 8.0, 1.5, true);
+                
+                console.log(`Wind charge direct hit: ${directHitPlayer.id} - 8 blocks knockback`);
+                
+                const explosionX = Math.floor(windcharge.pos.x);
+                const explosionY = Math.floor(windcharge.pos.y);
+                const explosionZ = Math.floor(windcharge.pos.z);
+                
+                io.emit('windchargeExplosion', {
+                    x: explosionX,
+                    y: explosionY,
+                    z: explosionZ
+                });
+                
+                windcharge.arrived = true;
+                windchargeRemovals.push(id);
+            } else {
+                const dx = windcharge.pos.x - prevPos.x;
+                const dy = windcharge.pos.y - prevPos.y;
+                const dz = windcharge.pos.z - prevPos.z;
+                const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                
+                if (distance > 0) {
+                    const steps = Math.ceil(distance * 2);
+                    let hitBlock = null;
+                    
+                    for (let i = 0; i <= steps; i++) {
+                        const t = i / steps;
+                        const checkX = prevPos.x + dx * t;
+                        const checkY = prevPos.y + dy * t;
+                        const checkZ = prevPos.z + dz * t;
+                        
+                        const blockX = Math.floor(checkX);
+                        const blockY = Math.floor(checkY);
+                        const blockZ = Math.floor(checkZ);
+                        const blockKeyStr = blockKey(blockX, blockY, blockZ);
+                        
+                        if (blocks.has(blockKeyStr)) {
+                            hitBlock = { x: blockX, y: blockY, z: blockZ };
+                            break;
+                        }
+                    }
+                    
+                    if (hitBlock) {
+                        windcharge.hit = true;
+                        
+                        const explosionPos = { x: hitBlock.x + 0.5, y: hitBlock.y + 0.5, z: hitBlock.z + 0.5 };
+                        const explosionRadius = 4;
+                        const explosionForce = 4;
+                        
+                        players.forEach((player, playerId) => {
+                            if (player.spectator) return;
+                            
+                            applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
+                        });
+                        
+                        io.emit('windchargeExplosion', {
+                            x: hitBlock.x,
+                            y: hitBlock.y,
+                            z: hitBlock.z
+                        });
+                        
+                        windcharge.arrived = true;
+                        windchargeRemovals.push(id);
+                    } else if (windcharge.pos.y < -50 || now - windcharge.createdAt > 10000) {
+                        windcharge.arrived = true;
+                        windchargeRemovals.push(id);
+                    } else {
+                        windchargeUpdates.push({
+                            id: windcharge.id,
+                            x: windcharge.pos.x,
+                            y: windcharge.pos.y,
+                            z: windcharge.pos.z
+                        });
+                    }
+                } else if (windcharge.pos.y < -50 || now - windcharge.createdAt > 10000) {
+                    windcharge.arrived = true;
+                    windchargeRemovals.push(id);
+                } else {
+                    windchargeUpdates.push({
+                        id: windcharge.id,
+                        x: windcharge.pos.x,
+                        y: windcharge.pos.y,
+                        z: windcharge.pos.z
+                    });
+                }
+            }
+        });
+        
+        if (windchargeUpdates.length > 0) {
+            io.emit('updateWindcharge', windchargeUpdates);
+        }
+        
+        windchargeRemovals.forEach(id => {
+            windcharges.delete(id);
+            io.emit('removeWindcharge', id);
+        });
+
+        const breakingAnimationsToRemove = [];
+        breakingAnimations.forEach((anim, playerId) => {
+            if (now - anim.lastUpdate > 5000) {
+                breakingAnimationsToRemove.push(playerId);
+            }
+        });
+        
+        breakingAnimationsToRemove.forEach(playerId => {
+            const anim = breakingAnimations.get(playerId);
+            if (anim) {
+                io.emit('stopBreaking', {
+                    x: anim.x,
+                    y: anim.y,
+                    z: anim.z,
+                    playerId: playerId
+                });
+                breakingAnimations.delete(playerId);
+            }
+        });
+
+        players.forEach((p, id) => {
+            if (p.spectator) return;
+            
+            if (p.pos.y < -50 && now - p.lastRespawn > 2000) {
+                const bedKey = p.bedPos ? blockKey(p.bedPos.x, p.bedPos.y, p.bedPos.z) : null;
+                const hasBed = p.bedPos && blocks.get(bedKey) === 'Bed';
+                
+                if (hasBed) {
+                    p.health = PLAYER_MAX_HEALTH;
+                    
+                    p.pos.x = p.bedPos.x + 0.5;
+                    p.pos.y = p.bedPos.y + 2 + 1.6;
+                    p.pos.z = p.bedPos.z + 0.5;
+                    p.rot.yaw = 0;
+                    p.rot.pitch = 0;
+                    
+                    io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
+                    io.to(id).emit('notification', 'You fell into the void and respawned at your bed! Health restored to 10!');
+                    
+                    io.emit('playerHit', {
+                        attackerId: null,
+                        targetId: id,
+                        newHealth: p.health
+                    });
+                } else {
+                    eliminatePlayer(id, null);
+                }
+                p.lastRespawn = now;
+            }
+        });
+        
+        if (Math.random() < 0.2) {
+            checkWinCondition();
         }
     }
-    
-    animateExplosion();
-}
+
+    const states = Array.from(players.entries()).map(([id, p]) => ({
+        id,
+        pos: p.pos,
+        rot: p.rot,
+        crouch: p.crouch,
+        spectator: p.spectator,
+        health: p.health,
+        equippedWeapon: p.equippedWeapon
+    }));
+    io.emit('playersUpdate', states);
+}, 50);
+
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
+
+startPlayerCheck();
