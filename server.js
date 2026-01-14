@@ -1,3 +1,4 @@
+
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -582,8 +583,8 @@ io.on('connection', (socket) => {
         lastHitTime: 0,
         equippedWeapon: null,
         lastEnderpearlThrow: 0,
-        lastFireballThrow = 0,
-        lastWindchargeThrow = 0
+        lastFireballThrow: 0,  // Fixed: changed = to :
+        lastWindchargeThrow: 0  // Fixed: changed = to :
     };
     
     players.set(socket.id, playerState);
