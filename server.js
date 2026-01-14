@@ -69,8 +69,8 @@ const goldIslands = [
     {offsetX: 9, offsetZ: 33, spawnerX: 11.5, spawnerY: 1, spawnerZ: 35.5}
 ];
 
-// Emerald island position
-const emeraldIsland = {offsetX: 9, offsetZ: 9, spawnerX: 11.5, spawnerY: 1, spawnerZ: 11.5};
+// Emerald island position - 20x20 island with rocks
+const emeraldIsland = {offsetX: 0, offsetZ: 0, spawnerX: 10, spawnerY: 1, spawnerZ: 10};
 
 let occupiedIronIslands = [];
 
@@ -206,6 +206,58 @@ function createIsland(offsetX, offsetZ, spawnerType = null) {
     }
 }
 
+function createEmeraldIsland() {
+    const size = 20;
+    const offsetX = emeraldIsland.offsetX;
+    const offsetZ = emeraldIsland.offsetZ;
+    
+    // Create grass base (20x20)
+    for (let x = 0; x < size; x++) {
+        for (let z = 0; z < size; z++) {
+            addBlock(offsetX + x, 0, offsetZ + z, 'Grass');
+        }
+    }
+    
+    // Add rocks (stone blocks) scattered around
+    const rockPatterns = [
+        // Center rocks
+        {x: 8, z: 8, h: 2}, {x: 9, z: 8, h: 3}, {x: 10, z: 8, h: 2},
+        {x: 8, z: 9, h: 3}, {x: 9, z: 9, h: 4}, {x: 10, z: 9, h: 3},
+        {x: 8, z: 10, h: 2}, {x: 9, z: 10, h: 3}, {x: 10, z: 10, h: 2},
+        
+        // Corner rocks
+        {x: 2, z: 2, h: 3}, {x: 17, z: 2, h: 2}, {x: 2, z: 17, h: 2}, {x: 17, z: 17, h: 3},
+        
+        // Edge rocks
+        {x: 5, z: 0, h: 2}, {x: 10, z: 0, h: 1}, {x: 15, z: 0, h: 2},
+        {x: 0, z: 5, h: 1}, {x: 0, z: 10, h: 2}, {x: 0, z: 15, h: 1},
+        {x: 19, z: 5, h: 2}, {x: 19, z: 10, h: 1}, {x: 19, z: 15, h: 2},
+        {x: 5, z: 19, h: 1}, {x: 10, z: 19, h: 2}, {x: 15, z: 19, h: 1},
+        
+        // Random interior rocks
+        {x: 4, z: 4, h: 1}, {x: 6, z: 12, h: 2}, {x: 12, z: 6, h: 1},
+        {x: 14, z: 14, h: 2}, {x: 7, z: 15, h: 1}, {x: 15, z: 7, h: 2}
+    ];
+    
+    // Create the rocks
+    rockPatterns.forEach(rock => {
+        for (let y = 1; y <= rock.h; y++) {
+            addBlock(offsetX + rock.x, y, offsetZ + rock.z, 'Stone');
+        }
+    });
+    
+    // Add emerald spawner in the center
+    const s = {
+        x: offsetX + 10, // Center of 20x20 island
+        y: 1, 
+        z: offsetZ + 10,
+        resourceType: 'emerald',
+        interval: 10 * 1000,
+        lastSpawn: Date.now()
+    };
+    spawners.push(s);
+}
+
 function initWorld() {
     blocks.clear();
     pickups.clear();
@@ -223,7 +275,7 @@ function initWorld() {
         createIsland(island.offsetX, island.offsetZ, { type: 'gold', interval: 8 });
     });
     
-    createIsland(emeraldIsland.offsetX, emeraldIsland.offsetZ, { type: 'emerald', interval: 10 });
+    createEmeraldIsland();
     
     occupiedIronIslands = [];
 }
@@ -297,7 +349,7 @@ function eliminatePlayer(playerId, eliminatorId) {
     
     p.spectator = true;
     p.health = PLAYER_MAX_HEALTH;
-    p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
+    p.pos = { x: emeraldIsland.spawnerX + 0.5, y: 50, z: emeraldIsland.spawnerZ + 0.5 };
     
     if (p.bedPos) {
         for (let i = 0; i < ironIslands.length; i++) {
@@ -352,7 +404,7 @@ function resetGame() {
         p.bedPos = null;
         p.spectator = true;
         p.health = PLAYER_MAX_HEALTH;
-        p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
+        p.pos = { x: emeraldIsland.spawnerX + 0.5, y: 50, z: emeraldIsland.spawnerZ + 0.5 };
         p.equippedWeapon = null;
         p.lastEnderpearlThrow = 0;
         p.lastFireballThrow = 0;
@@ -569,7 +621,7 @@ io.on('connection', (socket) => {
     console.log(`New connection: ${socket.id}`);
     
     const playerState = {
-        pos: { x: 9 + 2.5, y: 50, z: 9 + 2.5 },
+        pos: { x: emeraldIsland.spawnerX + 0.5, y: 50, z: emeraldIsland.spawnerZ + 0.5 },
         rot: { yaw: 0, pitch: 0 },
         crouch: false,
         inventory: new Array(INVENTORY_SIZE).fill(null),
@@ -583,8 +635,8 @@ io.on('connection', (socket) => {
         lastHitTime: 0,
         equippedWeapon: null,
         lastEnderpearlThrow: 0,
-        lastFireballThrow: 0,  // Fixed: changed = to :
-        lastWindchargeThrow: 0  // Fixed: changed = to :
+        lastFireballThrow: 0,
+        lastWindchargeThrow: 0
     };
     
     players.set(socket.id, playerState);
