@@ -63,13 +63,15 @@ const ironIslands = [
     {offsetX: 33, offsetZ: 33, bedX: 34, bedY: 1, bedZ: 34}
 ];
 
-// Gold island positions
+// Gold island positions - adjusted for 18 block gap from emerald island
 const goldIslands = [
-    {offsetX: 9, offsetZ: -15, spawnerX: 11.5, spawnerY: 1, spawnerZ: -12.5},
-    {offsetX: 9, offsetZ: 33, spawnerX: 11.5, spawnerY: 1, spawnerZ: 35.5}
+    {offsetX: 9, offsetZ: -24, spawnerX: 11.5, spawnerY: 1, spawnerZ: -21.5}, // North gold island
+    {offsetX: 9, offsetZ: 37, spawnerX: 11.5, spawnerY: 1, spawnerZ: 39.5}    // South gold island
 ];
 
 // Emerald island position - 20x20 island with rocks
+// Emerald island is 20x20, centered at (0,0) to (19,19)
+// Spawner at center (10, 1, 10)
 const emeraldIsland = {offsetX: 0, offsetZ: 0, spawnerX: 10, spawnerY: 1, spawnerZ: 10};
 
 let occupiedIronIslands = [];
@@ -219,11 +221,10 @@ function createEmeraldIsland() {
     }
     
     // Add rocks (stone blocks) scattered around
+    // Ensure no rocks in a 3x3 area around the spawner (x: 8-12, z: 8-12)
     const rockPatterns = [
-        // Center rocks
-        {x: 8, z: 8, h: 2}, {x: 9, z: 8, h: 3}, {x: 10, z: 8, h: 2},
-        {x: 8, z: 9, h: 3}, {x: 9, z: 9, h: 4}, {x: 10, z: 9, h: 3},
-        {x: 8, z: 10, h: 2}, {x: 9, z: 10, h: 3}, {x: 10, z: 10, h: 2},
+        // Center rocks - avoiding spawner area
+        {x: 5, z: 5, h: 2}, {x: 14, z: 5, h: 3}, {x: 5, z: 14, h: 2}, {x: 14, z: 14, h: 3},
         
         // Corner rocks
         {x: 2, z: 2, h: 3}, {x: 17, z: 2, h: 2}, {x: 2, z: 17, h: 2}, {x: 17, z: 17, h: 3},
@@ -234,13 +235,22 @@ function createEmeraldIsland() {
         {x: 19, z: 5, h: 2}, {x: 19, z: 10, h: 1}, {x: 19, z: 15, h: 2},
         {x: 5, z: 19, h: 1}, {x: 10, z: 19, h: 2}, {x: 15, z: 19, h: 1},
         
-        // Random interior rocks
-        {x: 4, z: 4, h: 1}, {x: 6, z: 12, h: 2}, {x: 12, z: 6, h: 1},
-        {x: 14, z: 14, h: 2}, {x: 7, z: 15, h: 1}, {x: 15, z: 7, h: 2}
+        // Random interior rocks - avoiding spawner area
+        {x: 3, z: 3, h: 1}, {x: 6, z: 12, h: 2}, {x: 12, z: 6, h: 1},
+        {x: 16, z: 16, h: 2}, {x: 7, z: 15, h: 1}, {x: 15, z: 7, h: 2},
+        {x: 3, z: 15, h: 1}, {x: 15, z: 3, h: 2}, {x: 8, z: 3, h: 1},
+        {x: 3, z: 8, h: 2}, {x: 16, z: 12, h: 1}, {x: 12, z: 16, h: 2}
     ];
     
+    // Filter out rocks that would be in the spawner area (x: 8-12, z: 8-12)
+    const safeRockPatterns = rockPatterns.filter(rock => {
+        // Check if rock is in the spawner exclusion zone
+        const inSpawnerArea = rock.x >= 8 && rock.x <= 12 && rock.z >= 8 && rock.z <= 12;
+        return !inSpawnerArea;
+    });
+    
     // Create the rocks
-    rockPatterns.forEach(rock => {
+    safeRockPatterns.forEach(rock => {
         for (let y = 1; y <= rock.h; y++) {
             addBlock(offsetX + rock.x, y, offsetZ + rock.z, 'Stone');
         }
