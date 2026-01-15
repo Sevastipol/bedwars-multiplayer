@@ -748,6 +748,28 @@ io.on('connection', (socket) => {
             return;
         }
         
+        // Bedrock Edition validation: Check if block is adjacent to an existing block
+        const adjacentDirections = [
+            [1, 0, 0], [-1, 0, 0],
+            [0, 1, 0], [0, -1, 0],
+            [0, 0, 1], [0, 0, -1]
+        ];
+        
+        let hasAdjacentBlock = false;
+        for (const [dx, dy, dz] of adjacentDirections) {
+            const adjKey = blockKey(x + dx, y + dy, z + dz);
+            if (blocks.has(adjKey)) {
+                hasAdjacentBlock = true;
+                break;
+            }
+        }
+        
+        if (!hasAdjacentBlock) {
+            socket.emit('revertPlace', { x, y, z });
+            socket.emit('notification', 'No adjacent block to place against!');
+            return;
+        }
+        
         const eyeHeight = p.crouch ? 1.3 : 1.6;
         const playerEyeY = p.pos.y;
         const blockCenterY = y + 0.5;
