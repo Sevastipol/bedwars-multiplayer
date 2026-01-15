@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>3D Island Builder - Multiplayer</title>
     <style>
-       body {
+        body {
             margin: 0;
             overflow: hidden;
             font-family: 'Segoe UI', sans-serif;
@@ -346,6 +346,7 @@
     </style>
 </head>
 <body>
+    <!-- Fullscreen Overlay -->
     <div id="fullscreen-overlay" style="display: block;">
         <h2>Island Builder Multiplayer</h2>
         <p>Click the button below to enter fullscreen mode</p>
@@ -400,7 +401,7 @@
         <p style="color: #888; margin-top: 20px; font-size: 0.8em;">Press [B] to Close</p>
     </div>
     <div id="notification"></div>
-    
+
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script type="importmap">
         {
@@ -1281,10 +1282,32 @@
                 if (itemData.isWeapon || itemData.isTool) {
                     weaponToolInHand = createWeaponToolMesh(currentSlot.type);
                     if (weaponToolInHand) {
+                        // Add to scene
                         scene.add(weaponToolInHand);
                     }
                 }
             }
+        }
+
+        function updateWeaponPosition() {
+            if (!weaponToolInHand) return;
+            
+            // Calculate position 0.5 units in front of camera
+            const direction = new THREE.Vector3(0, 0, -1);
+            direction.applyQuaternion(camera.quaternion);
+            direction.normalize();
+            
+            const distance = 0.5; // 0.5 blocks in front
+            const weaponPosition = new THREE.Vector3(
+                camera.position.x + direction.x * distance,
+                camera.position.y + direction.y * distance - 0.2, // Slightly lower
+                camera.position.z + direction.z * distance
+            );
+            
+            weaponToolInHand.position.copy(weaponPosition);
+            
+            // Make weapon face the camera (so it's always visible)
+            weaponToolInHand.lookAt(camera.position);
         }
 
         // --- Breaking Animation Functions for Other Players ---
@@ -1928,40 +1951,20 @@
             
             cleanupOldBreakingOverlays();
 
-            // Update held item position to be in front of the player
+            // Update weapon position in world space
             if (weaponToolInHand && !isSpectator) {
-                // Calculate position in front of the camera
-                const distanceInFront = 1.0; // Distance in front of the player
-                const verticalOffset = -0.2; // Slightly below center
-                const horizontalOffset = 0.3; // To the right
+                updateWeaponPosition();
                 
-                // Get camera direction
-                const direction = new THREE.Vector3(0, 0, -1);
-                direction.applyQuaternion(camera.quaternion);
-                direction.normalize();
+                // Add bobbing animation
+                swordBobTime += delta * 10;
+                const bobAmount = Math.sin(swordBobTime) * 0.05;
                 
-                // Calculate position
-                const position = new THREE.Vector3(
-                    camera.position.x + direction.x * distanceInFront + camera.right.x * horizontalOffset,
-                    camera.position.y + direction.y * distanceInFront + verticalOffset,
-                    camera.position.z + direction.z * distanceInFront + camera.right.z * horizontalOffset
-                );
+                // Apply bobbing effect by moving weapon slightly up and down
+                weaponToolInHand.position.y += bobAmount;
                 
-                weaponToolInHand.position.copy(position);
-                
-                // Make the item face the camera
-                weaponToolInHand.lookAt(camera.position);
-                
-                // Add bobbing animation when moving
+                // Slight rotation for swinging effect when moving
                 if (moveState.fwd || moveState.bwd || moveState.l || moveState.r) {
-                    swordBobTime += delta * 10;
-                    const bobAmount = Math.sin(swordBobTime) * 0.05;
-                    weaponToolInHand.position.y += bobAmount;
-                    
-                    // Slight rotation for swinging effect
-                    weaponToolInHand.rotation.z = Math.sin(swordBobTime * 2) * 0.1;
-                } else {
-                    weaponToolInHand.rotation.z = 0;
+                    weaponToolInHand.rotation.z += Math.sin(swordBobTime * 2) * 0.1;
                 }
             }
 
