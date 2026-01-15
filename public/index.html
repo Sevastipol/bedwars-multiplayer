@@ -433,13 +433,6 @@
         let lastFireballThrow = 0;
         let lastWindchargeThrow = 0;
 
-        // --- Screen Shake Variables ---
-        let screenShakeIntensity = 0;
-        let screenShakeDuration = 0;
-        let originalCameraPosition = new THREE.Vector3();
-        let originalCameraRotation = new THREE.Euler();
-        let isShaking = false;
-
         // --- Config ---
         const BLOCK_TYPES = {
             'Grass': { color: 0x4d9043, cost: { iron: 5 }, breakTime: 1.2, buyAmount: 8, hasTexture: true },
@@ -486,9 +479,8 @@
         // Crouching state
         let isCrouching = false;
 
-        // Sword in hand
-        let swordInHand = null;
-        let toolInHand = null;
+        // Weapon/Tool in hand
+        let weaponToolInHand = null;
 
         let playerId = null;
         let blocksMeshes = new Map();
@@ -595,16 +587,8 @@
                 velocity.y = 0;
                 onGround = true;
                 
-                // Remove sword from hand
-                if (swordInHand) {
-                    scene.remove(swordInHand);
-                    swordInHand = null;
-                }
-                
-                if (toolInHand) {
-                    scene.remove(toolInHand);
-                    toolInHand = null;
-                }
+                // Remove weapon/tool from hand
+                removeWeaponToolFromHand();
                 
                 if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
                     setTimeout(() => {
@@ -1251,82 +1235,56 @@
             animateExplosion();
         }
 
-        // --- Sword Functions ---
-        function createSwordMesh(type, playerId = null) {
+        // --- Weapon/Tool Functions ---
+        function createWeaponToolMesh(type) {
             let texture = null;
-            if (type === 'Wooden Sword' && woodenSwordTexture) texture = woodenSwordTexture;
-            else if (type === 'Iron Sword' && ironSwordTexture) texture = ironSwordTexture;
-            else if (type === 'Emerald Sword' && emeraldSwordTexture) texture = emeraldSwordTexture;
+            
+            if (type === 'Wooden Sword') texture = woodenSwordTexture;
+            else if (type === 'Iron Sword') texture = ironSwordTexture;
+            else if (type === 'Emerald Sword') texture = emeraldSwordTexture;
+            else if (type === 'Axe') texture = axeTexture;
+            else if (type === 'Pickaxe') texture = pickaxeTexture;
             
             if (!texture) return null;
             
             const material = new THREE.SpriteMaterial({ 
                 map: texture,
                 transparent: true,
-                opacity: 0.9
+                opacity: 0.9,
+                depthTest: false,
+                depthWrite: false
             });
             
-            const sword = new THREE.Sprite(material);
+            const mesh = new THREE.Sprite(material);
+            mesh.scale.set(0.5, 0.5, 1);
             
-            if (playerId) {
-                sword.userData = { type: 'sword', playerId: playerId, swordType: type };
-            }
-            
-            return sword;
+            return mesh;
         }
 
-        // --- Tool Functions ---
-        function createToolMesh(type, playerId = null) {
-            let texture = null;
-            if (type === 'Axe' && axeTexture) texture = axeTexture;
-            else if (type === 'Pickaxe' && pickaxeTexture) texture = pickaxeTexture;
-            
-            if (!texture) return null;
-            
-            const material = new THREE.SpriteMaterial({ 
-                map: texture,
-                transparent: true,
-                opacity: 0.9
-            });
-            
-            const tool = new THREE.Sprite(material);
-            
-            if (playerId) {
-                tool.userData = { type: 'tool', playerId: playerId, toolType: type };
+        function removeWeaponToolFromHand() {
+            if (weaponToolInHand) {
+                camera.remove(weaponToolInHand);
+                if (weaponToolInHand.material) weaponToolInHand.material.dispose();
+                weaponToolInHand = null;
             }
-            
-            return tool;
         }
 
         function updateEquipmentInHand() {
             // Remove existing equipment
-            if (swordInHand) {
-                scene.remove(swordInHand);
-                swordInHand = null;
-            }
+            removeWeaponToolFromHand();
             
-            if (toolInHand) {
-                scene.remove(toolInHand);
-                toolInHand = null;
-            }
+            if (isSpectator) return;
             
             const currentSlot = inventory[selectedSlotIndex];
             if (currentSlot && currentSlot.type && BLOCK_TYPES[currentSlot.type]) {
                 const itemData = BLOCK_TYPES[currentSlot.type];
                 
-                if (itemData.isWeapon) {
-                    swordInHand = createSwordMesh(currentSlot.type);
-                    if (swordInHand) {
-                        swordInHand.position.set(-0.4, -0.3, -0.5);
-                        swordInHand.scale.set(1.0, 1.0, 1);
-                        scene.add(swordInHand);
-                    }
-                } else if (itemData.isTool) {
-                    toolInHand = createToolMesh(currentSlot.type);
-                    if (toolInHand) {
-                        toolInHand.position.set(-0.4, -0.3, -0.5);
-                        toolInHand.scale.set(1.0, 1.0, 1);
-                        scene.add(toolInHand);
+                if (itemData.isWeapon || itemData.isTool) {
+                    weaponToolInHand = createWeaponToolMesh(currentSlot.type);
+                    if (weaponToolInHand) {
+                        // Attach to camera for first-person view
+                        weaponToolInHand.position.set(0.3, -0.3, -0.5);
+                        camera.add(weaponToolInHand);
                     }
                 }
             }
@@ -1973,6 +1931,20 @@
             
             cleanupOldBreakingOverlays();
 
+            // Weapon/tool bobbing animation
+            if (weaponToolInHand && !isSpectator) {
+                swordBobTime += delta * 10;
+                const bobAmount = Math.sin(swordBobTime) * 0.05;
+                weaponToolInHand.position.y = -0.3 + bobAmount;
+                
+                // Slight rotation for swinging effect when moving
+                if (moveState.fwd || moveState.bwd || moveState.l || moveState.r) {
+                    weaponToolInHand.rotation.z = Math.sin(swordBobTime * 2) * 0.1;
+                } else {
+                    weaponToolInHand.rotation.z = 0;
+                }
+            }
+
             if (isBreaking && breakingBlock && !isSpectator) {
                 if (!isStillLookingAtBlock()) {
                     if (breakingBlock) {
@@ -2304,7 +2276,7 @@
 
             if (!isSpectator && socket.connected && time - lastPlayerUpdate > 50) {
                 const currentSlot = inventory[selectedSlotIndex];
-                const equippedWeapon = currentSlot && currentSlot.type && BLOCK_TYPES[currentSlot.type] && BLOCK_TYPES[currentSlot.type].isWeapon ? currentSlot.type : null;
+                const equippedWeapon = currentSlot && currentSlot.type && BLOCK_TYPES[currentSlot.type] && (BLOCK_TYPES[currentSlot.type].isWeapon || BLOCK_TYPES[currentSlot.type].isTool) ? currentSlot.type : null;
                 
                 socket.emit('playerUpdate', {
                     pos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
@@ -2349,6 +2321,7 @@
                     data.healthBar.style.backgroundColor = health > 5 ? '#4CAF50' : health > 2 ? '#FFA500' : '#FF0000';
                 }
                 
+                // Update other players' weapon display
                 if (playerSwords.has(id)) {
                     const sword = playerSwords.get(id);
                     sword.lookAt(camera.position);
@@ -2632,11 +2605,51 @@
 
             playerHealth.set(id, health);
             
-            if (equippedWeapon) {
-                updateOtherPlayerSword(id, equippedWeapon);
+            if (equippedWeapon && (BLOCK_TYPES[equippedWeapon]?.isWeapon || BLOCK_TYPES[equippedWeapon]?.isTool)) {
+                updateOtherPlayerWeapon(id, equippedWeapon);
             }
             
             return group;
+        }
+
+        function updateOtherPlayerWeapon(id, weaponType) {
+            // Remove existing weapon
+            if (playerSwords.has(id)) {
+                const oldSword = playerSwords.get(id);
+                const op = otherPlayers.get(id);
+                if (op && op.group) {
+                    op.group.remove(oldSword);
+                }
+                playerSwords.delete(id);
+            }
+            
+            if (!weaponType || (!BLOCK_TYPES[weaponType]?.isWeapon && !BLOCK_TYPES[weaponType]?.isTool)) return;
+            
+            const op = otherPlayers.get(id);
+            if (!op || !op.group) return;
+            
+            let texture = null;
+            if (weaponType === 'Wooden Sword') texture = woodenSwordTexture;
+            else if (weaponType === 'Iron Sword') texture = ironSwordTexture;
+            else if (weaponType === 'Emerald Sword') texture = emeraldSwordTexture;
+            else if (weaponType === 'Axe') texture = axeTexture;
+            else if (weaponType === 'Pickaxe') texture = pickaxeTexture;
+            
+            if (!texture) return;
+            
+            const material = new THREE.SpriteMaterial({ 
+                map: texture,
+                transparent: true,
+                opacity: 0.9
+            });
+            
+            const weapon = new THREE.Sprite(material);
+            weapon.scale.set(0.5, 0.5, 1);
+            weapon.position.set(-0.3, 0.8, 0); // Position in right hand
+            weapon.userData = { type: 'weapon', playerId: id, weaponType: weaponType };
+            
+            op.group.add(weapon);
+            playerSwords.set(id, weapon);
         }
 
         function updatePlayerHealth(id, health) {
@@ -2773,7 +2786,7 @@
                     
                     if (equippedWeapon !== op.equippedWeapon) {
                         op.equippedWeapon = equippedWeapon;
-                        updateOtherPlayerSword(id, equippedWeapon);
+                        updateOtherPlayerWeapon(id, equippedWeapon);
                     }
                     
                     if (spectator) {
@@ -2933,7 +2946,8 @@
                     selected: selectedSlotIndex,
                     spectator: isSpectator,
                     equippedWeapon: inventory[selectedSlotIndex] && 
-                                   BLOCK_TYPES[inventory[selectedSlotIndex]?.type]?.isWeapon ? 
+                                   (BLOCK_TYPES[inventory[selectedSlotIndex]?.type]?.isWeapon || 
+                                    BLOCK_TYPES[inventory[selectedSlotIndex]?.type]?.isTool) ? 
                                    inventory[selectedSlotIndex].type : null
                 });
             }
@@ -3033,15 +3047,7 @@
             });
             breakingOverlays.clear();
             
-            if (swordInHand) {
-                scene.remove(swordInHand);
-                swordInHand = null;
-            }
-            
-            if (toolInHand) {
-                scene.remove(toolInHand);
-                toolInHand = null;
-            }
+            removeWeaponToolFromHand();
             
             data.blocks.forEach(({ x, y, z, type }) => {
                 addBlockMesh(x, y, z, type);
