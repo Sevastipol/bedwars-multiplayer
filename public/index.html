@@ -487,7 +487,7 @@
         let pickupMeshes = new Map();
         let otherPlayers = new Map();
         let playerHealth = new Map();
-        let playerSwords = new Map();
+        let playerItems = new Map();
 
         // --- Fullscreen Functions ---
         function enterFullscreen() {
@@ -1282,8 +1282,8 @@
                 if (itemData.isWeapon || itemData.isTool) {
                     weaponToolInHand = createWeaponToolMesh(currentSlot.type);
                     if (weaponToolInHand) {
-                        // Attach to camera for first-person view - LEFT HAND position
-                        weaponToolInHand.position.set(-0.3, -0.3, -0.5);
+                        // Attach to camera for first-person view
+                        weaponToolInHand.position.set(0.3, -0.3, -0.5);
                         camera.add(weaponToolInHand);
                     }
                 }
@@ -2276,7 +2276,7 @@
 
             if (!isSpectator && socket.connected && time - lastPlayerUpdate > 50) {
                 const currentSlot = inventory[selectedSlotIndex];
-                const equippedWeapon = currentSlot && currentSlot.type && BLOCK_TYPES[currentSlot.type] && (BLOCK_TYPES[currentSlot.type].isWeapon || BLOCK_TYPES[currentSlot.type].isTool) ? currentSlot.type : null;
+                const equippedItem = currentSlot ? currentSlot.type : null;
                 
                 socket.emit('playerUpdate', {
                     pos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
@@ -2284,7 +2284,7 @@
                     crouch: isCrouching,
                     selected: selectedSlotIndex,
                     spectator: isSpectator,
-                    equippedWeapon: equippedWeapon
+                    equippedItem: equippedItem
                 });
                 lastPlayerUpdate = time;
             }
@@ -2321,20 +2321,37 @@
                     data.healthBar.style.backgroundColor = health > 5 ? '#4CAF50' : health > 2 ? '#FFA500' : '#FF0000';
                 }
                 
-                // Update other players' weapon display - LEFT HAND
-                if (playerSwords.has(id)) {
-                    const swordGroup = playerSwords.get(id);
-                    const weapon = swordGroup.children[0];
+                // Update other players' item display with bobbing animation
+                if (playerItems.has(id)) {
+                    const item = playerItems.get(id);
                     
-                    // Make the weapon look at the camera but maintain its left hand position
-                    weapon.lookAt(camera.position);
+                    // Make item face the camera
+                    item.lookAt(camera.position);
                     
-                    // Add slight bobbing animation for other players' weapons
-                    const bobTime = Date.now() / 200;
-                    const bobAmount = Math.sin(bobTime) * 0.02;
-                    if (data.leftArm) {
-                        swordGroup.position.copy(data.leftArm.position);
-                        swordGroup.position.y += bobAmount;
+                    // Add subtle bobbing animation when player is moving
+                    const isMoving = data.group.position.distanceTo(data.lastPos || data.group.position) > 0.01;
+                    if (isMoving) {
+                        // Bobbing animation
+                        const bobOffset = Math.sin(time * 0.01) * 0.05;
+                        item.position.y = 0.8 + bobOffset;
+                        
+                        // Slight rotation
+                        item.rotation.z = Math.PI / 4 + Math.sin(time * 0.005) * 0.1;
+                    } else {
+                        item.position.y = 0.8;
+                        item.rotation.z = Math.PI / 4;
+                    }
+                    
+                    // Store last position for movement detection
+                    data.lastPos = data.group.position.clone();
+                    
+                    // Rotate texture for certain items
+                    const userData = item.userData;
+                    if (userData && (userData.itemType === 'Enderpearl' || 
+                                    userData.itemType === 'Fireball' || 
+                                    userData.itemType === 'Wind Charge')) {
+                        item.material.rotation += 0.05;
+                        item.material.needsUpdate = true;
                     }
                 }
             });
@@ -2538,7 +2555,7 @@
             return color;
         }
 
-        function createOtherPlayer(id, health = 10, equippedWeapon = null) {
+        function createOtherPlayer(id, health = 10, equippedItem = null) {
             const group = new THREE.Group();
             group.name = id;
 
@@ -2546,23 +2563,20 @@
             const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
             const headMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
             const head = new THREE.Mesh(headGeo, headMat);
-            head.position.y = 1.4; // Head is at 1.4 units from feet
+            head.position.y = 1.4;
             group.add(head);
 
             const bodyGeo = new THREE.BoxGeometry(0.6, 0.8, 0.3);
             const bodyColor = getPlayerColor(id);
             const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
             const body = new THREE.Mesh(bodyGeo, bodyMat);
-            body.position.y = 0.7; // Body center at 0.7 units from feet
+            body.position.y = 0.7;
             group.add(body);
 
             const armGeo = new THREE.BoxGeometry(0.25, 0.8, 0.25);
             const armMat = bodyMat;
-            
-            // LEFT ARM (for weapon attachment)
             const leftArm = new THREE.Mesh(armGeo, armMat);
             leftArm.position.set(0.5, 0.7, 0);
-            leftArm.name = 'leftArm';
             group.add(leftArm);
 
             const rightArm = new THREE.Mesh(armGeo, armMat);
@@ -2607,79 +2621,91 @@
             otherPlayers.set(id, {
                 group,
                 head,
-                leftArm, // Store reference to left arm
                 targetPos: { x: 0, y: 0, z: 0 },
                 targetRot: { yaw: 0, pitch: 0 },
                 targetCrouch: false,
                 crouch: false,
                 spectator: false,
                 healthBar: null,
-                equippedWeapon: equippedWeapon
+                equippedItem: equippedItem,
+                lastPos: null
             });
 
             playerHealth.set(id, health);
             
-            if (equippedWeapon && (BLOCK_TYPES[equippedWeapon]?.isWeapon || BLOCK_TYPES[equippedWeapon]?.isTool)) {
-                updateOtherPlayerWeapon(id, equippedWeapon);
+            // Create item in hand if equipped
+            if (equippedItem) {
+                updateOtherPlayerItem(id, equippedItem);
             }
             
             return group;
         }
 
-        function updateOtherPlayerWeapon(id, weaponType) {
-            // Remove existing weapon
-            if (playerSwords.has(id)) {
-                const oldSword = playerSwords.get(id);
+        function updateOtherPlayerItem(id, itemType) {
+            // Remove existing item
+            if (playerItems.has(id)) {
+                const oldItem = playerItems.get(id);
                 const op = otherPlayers.get(id);
                 if (op && op.group) {
-                    op.group.remove(oldSword);
+                    op.group.remove(oldItem);
                 }
-                playerSwords.delete(id);
+                playerItems.delete(id);
             }
             
-            if (!weaponType || (!BLOCK_TYPES[weaponType]?.isWeapon && !BLOCK_TYPES[weaponType]?.isTool)) return;
+            if (!itemType) return;
             
             const op = otherPlayers.get(id);
             if (!op || !op.group) return;
             
             let texture = null;
-            if (weaponType === 'Wooden Sword') texture = woodenSwordTexture;
-            else if (weaponType === 'Iron Sword') texture = ironSwordTexture;
-            else if (weaponType === 'Emerald Sword') texture = emeraldSwordTexture;
-            else if (weaponType === 'Axe') texture = axeTexture;
-            else if (weaponType === 'Pickaxe') texture = pickaxeTexture;
             
-            if (!texture) return;
+            // Map item types to textures
+            if (itemType === 'Wooden Sword') texture = woodenSwordTexture;
+            else if (itemType === 'Iron Sword') texture = ironSwordTexture;
+            else if (itemType === 'Emerald Sword') texture = emeraldSwordTexture;
+            else if (itemType === 'Axe') texture = axeTexture;
+            else if (itemType === 'Pickaxe') texture = pickaxeTexture;
+            else if (itemType === 'Enderpearl') texture = enderpearlTexture;
+            else if (itemType === 'Fireball') texture = fireballTexture;
+            else if (itemType === 'Wind Charge') texture = windchargeTexture;
+            else if (itemType === 'Grass') texture = grassTexture;
+            else if (itemType === 'Wood') texture = woodTexture;
+            else if (itemType === 'Stone') texture = stoneTexture;
+            else if (itemType === 'Obsidian') texture = obsidianTexture;
+            
+            if (!texture) {
+                // For items without specific textures, create colored sprite
+                const blockData = BLOCK_TYPES[itemType];
+                if (blockData) {
+                    const material = new THREE.SpriteMaterial({ 
+                        color: blockData.color,
+                        transparent: true,
+                        opacity: itemType === 'Glass' ? 0.8 : 0.9
+                    });
+                    const item = new THREE.Sprite(material);
+                    item.scale.set(0.4, 0.4, 1);
+                    item.position.set(-0.3, 0.8, 0);
+                    item.userData = { type: 'item', playerId: id, itemType: itemType };
+                    
+                    op.group.add(item);
+                    playerItems.set(id, item);
+                }
+                return;
+            }
             
             const material = new THREE.SpriteMaterial({ 
                 map: texture,
                 transparent: true,
-                opacity: 0.9,
-                depthTest: false
+                opacity: 0.9
             });
             
-            const weapon = new THREE.Sprite(material);
-            weapon.scale.set(0.5, 0.5, 1);
+            const item = new THREE.Sprite(material);
+            item.scale.set(0.4, 0.4, 1);
+            item.position.set(-0.3, 0.8, 0); // Position in right hand
+            item.userData = { type: 'item', playerId: id, itemType: itemType };
             
-            // Create a group for the weapon relative to the left arm
-            const weaponGroup = new THREE.Group();
-            weapon.position.set(0.2, 0.2, 0); // Offset from the arm
-            weaponGroup.add(weapon);
-            
-            // Attach to the left arm mesh if it exists
-            if (op.leftArm) {
-                weaponGroup.position.copy(op.leftArm.position);
-            } else {
-                // Fallback position if left arm not found
-                weaponGroup.position.set(0.3, 0.8, 0); // Left hand position
-            }
-            
-            // Adjust rotation for left hand
-            weaponGroup.rotation.y = Math.PI; // Face forward
-            weapon.rotation.z = Math.PI / 4; // Angled grip
-            
-            op.group.add(weaponGroup);
-            playerSwords.set(id, weaponGroup);
+            op.group.add(item);
+            playerItems.set(id, item);
         }
 
         function updatePlayerHealth(id, health) {
@@ -2718,8 +2744,8 @@
                 scene.remove(op.group);
                 otherPlayers.delete(id);
                 playerHealth.delete(id);
-                if (playerSwords.has(id)) {
-                    playerSwords.delete(id);
+                if (playerItems.has(id)) {
+                    playerItems.delete(id);
                 }
             }
         }
@@ -2754,9 +2780,9 @@
         });
 
         socket.on('playersSnapshot', (others) => {
-            others.forEach(({ id, pos, rot, crouch, spectator, health, equippedWeapon }) => {
+            others.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem }) => {
                 if (spectator) return;
-                createOtherPlayer(id, health || 10, equippedWeapon);
+                createOtherPlayer(id, health || 10, equippedItem);
                 const op = otherPlayers.get(id);
                 
                 // FIX: Properly position player model to avoid sinking
@@ -2770,13 +2796,13 @@
                 op.targetRot = rot;
                 op.targetCrouch = crouch;
                 op.spectator = spectator;
-                op.equippedWeapon = equippedWeapon;
+                op.equippedItem = equippedItem;
             });
         });
 
-        socket.on('newPlayer', ({ id, pos, rot, crouch, spectator, health, equippedWeapon }) => {
+        socket.on('newPlayer', ({ id, pos, rot, crouch, spectator, health, equippedItem }) => {
             if (spectator) return;
-            createOtherPlayer(id, health || 10, equippedWeapon);
+            createOtherPlayer(id, health || 10, equippedItem);
             const op = otherPlayers.get(id);
             
             // FIX: Properly position player model to avoid sinking
@@ -2790,15 +2816,15 @@
             op.targetRot = rot;
             op.targetCrouch = crouch;
             op.spectator = spectator;
-            op.equippedWeapon = equippedWeapon;
+            op.equippedItem = equippedItem;
         });
 
         socket.on('playersUpdate', (states) => {
-            states.forEach(({ id, pos, rot, crouch, spectator, health, equippedWeapon }) => {
+            states.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem }) => {
                 if (id === playerId) return;
                 let op = otherPlayers.get(id);
                 if (!op && !spectator) {
-                    createOtherPlayer(id, health || 10, equippedWeapon);
+                    createOtherPlayer(id, health || 10, equippedItem);
                     op = otherPlayers.get(id);
                 }
                 if (op) {
@@ -2814,17 +2840,17 @@
                     op.targetCrouch = crouch;
                     op.spectator = spectator;
                     
-                    if (equippedWeapon !== op.equippedWeapon) {
-                        op.equippedWeapon = equippedWeapon;
-                        updateOtherPlayerWeapon(id, equippedWeapon);
+                    if (equippedItem !== op.equippedItem) {
+                        op.equippedItem = equippedItem;
+                        updateOtherPlayerItem(id, equippedItem);
                     }
                     
                     if (spectator) {
                         op.group.visible = false;
-                        if (playerSwords.has(id)) {
-                            const sword = playerSwords.get(id);
-                            op.group.remove(sword);
-                            playerSwords.delete(id);
+                        if (playerItems.has(id)) {
+                            const item = playerItems.get(id);
+                            op.group.remove(item);
+                            playerItems.delete(id);
                         }
                     } else {
                         op.group.visible = true;
@@ -2975,10 +3001,7 @@
                     crouch: isCrouching,
                     selected: selectedSlotIndex,
                     spectator: isSpectator,
-                    equippedWeapon: inventory[selectedSlotIndex] && 
-                                   (BLOCK_TYPES[inventory[selectedSlotIndex]?.type]?.isWeapon || 
-                                    BLOCK_TYPES[inventory[selectedSlotIndex]?.type]?.isTool) ? 
-                                   inventory[selectedSlotIndex].type : null
+                    equippedItem: inventory[selectedSlotIndex] ? inventory[selectedSlotIndex].type : null
                 });
             }
         });
@@ -3070,7 +3093,7 @@
             });
             otherPlayers.clear();
             playerHealth.clear();
-            playerSwords.clear();
+            playerItems.clear();
             
             breakingOverlays.forEach((data, key) => {
                 scene.remove(data.mesh);
