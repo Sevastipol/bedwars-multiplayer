@@ -748,42 +748,44 @@ io.on('connection', (socket) => {
             return;
         }
         
-        // Bedrock Edition validation: Check if block is adjacent to an existing block
-        const adjacentDirections = [
-            [1, 0, 0], [-1, 0, 0],
-            [0, 1, 0], [0, -1, 0],
-            [0, 0, 1], [0, 0, -1]
-        ];
-        
-        let hasAdjacentBlock = false;
-        for (const [dx, dy, dz] of adjacentDirections) {
-            const adjKey = blockKey(x + dx, y + dy, z + dz);
-            if (blocks.has(adjKey)) {
-                hasAdjacentBlock = true;
-                break;
-            }
-        }
-        
-        if (!hasAdjacentBlock) {
-            socket.emit('revertPlace', { x, y, z });
-            socket.emit('notification', 'No adjacent block to place against!');
-            return;
-        }
-        
+        // Minecraft Bedrock-style distance check (allows placing in air up to 5.5 blocks away)
         const eyeHeight = p.crouch ? 1.3 : 1.6;
         const playerEyeY = p.pos.y;
+        const blockCenterX = x + 0.5;
         const blockCenterY = y + 0.5;
+        const blockCenterZ = z + 0.5;
         
-        const dist = Math.hypot(
-            p.pos.x - (x + 0.5),
-            playerEyeY - blockCenterY,
-            p.pos.z - (z + 0.5)
-        );
+        // Calculate 3D distance from player's eyes to block center
+        const dx = p.pos.x - blockCenterX;
+        const dy = playerEyeY - blockCenterY;
+        const dz = p.pos.z - blockCenterZ;
+        const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
         
+        // Allow placement up to 5.5 blocks away (like Minecraft Bedrock)
         if (dist > 5.5) {
             socket.emit('revertPlace', { x, y, z });
             socket.emit('notification', 'Too far away!');
             return;
+        }
+        
+        // Check if block would intersect with player
+        const playerHeight = p.crouch ? 1.8 : 2.3; // Total player height when crouching/standing
+        const playerFeetY = p.pos.y - eyeHeight;
+        const playerHeadY = playerFeetY + playerHeight;
+        const blockMinY = y;
+        const blockMaxY = y + 1;
+        
+        // If block overlaps with player vertically
+        if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
+            const dx = Math.abs(p.pos.x - blockCenterX);
+            const dz = Math.abs(p.pos.z - blockCenterZ);
+            
+            // Player collision radius (approximately)
+            if (dx < 0.4 && dz < 0.4) {
+                socket.emit('revertPlace', { x, y, z });
+                socket.emit('notification', 'Cannot place block inside yourself!');
+                return;
+            }
         }
         
         slot.count--;
