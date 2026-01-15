@@ -1282,8 +1282,8 @@
                 if (itemData.isWeapon || itemData.isTool) {
                     weaponToolInHand = createWeaponToolMesh(currentSlot.type);
                     if (weaponToolInHand) {
-                        // Attach to camera for first-person view - CHANGED: from -0.5 to -1.5
-                        weaponToolInHand.position.set(0.3, -0.3, -1.5);
+                        // Attach to camera for first-person view
+                        weaponToolInHand.position.set(0.3, -0.3, -0.5);
                         camera.add(weaponToolInHand);
                     }
                 }
@@ -1811,8 +1811,14 @@
                     return;
                 }
                 
-                // Bedrock Edition block placement logic
-                if (currentSlot && currentSlot.count > 0) {
+                const blockIntersects = raycaster.intersectObjects(blocksInScene);
+                if (blockIntersects.length > 0 && currentSlot && currentSlot.count > 0) {
+                    const intersect = blockIntersects[0];
+                    if (intersect.distance > 5) {
+                        socket.emit('notification', 'Too far away!');
+                        return;
+                    }
+                    
                     // Check if item can be placed
                     const blockData = BLOCK_TYPES[currentSlot.type];
                     if (blockData && (blockData.isItem || blockData.isWeapon || blockData.isTool)) {
@@ -1820,129 +1826,210 @@
                         return;
                     }
                     
-                    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-                    const blockIntersects = raycaster.intersectObjects(blocksInScene);
+                    // Bedrock Edition Style Block Placement
+                    // Get the exact face position where player is looking
+                    const facePos = intersect.point.clone();
+                    const faceNormal = intersect.face.normal.clone();
                     
-                    let placementPos = null;
-                    let placementFaceNormal = null;
+                    // Move slightly away from the face to avoid Z-fighting
+                    const offset = 0.001;
+                    const adjustedPos = facePos.add(faceNormal.multiplyScalar(offset));
                     
-                    if (blockIntersects.length > 0) {
-                        // Standard placement: place on the face of the block we're looking at
-                        const intersect = blockIntersects[0];
-                        if (intersect.distance > 5) {
-                            socket.emit('notification', 'Too far away!');
-                            return;
+                    // Calculate block coordinates based on which face we're looking at
+                    let blockX = Math.floor(adjustedPos.x);
+                    let blockY = Math.floor(adjustedPos.y);
+                    let blockZ = Math.floor(adjustedPos.z);
+                    
+                    // Check if we're looking at the edge of a block and should place in mid-air
+                    // This is the key to Bedrock Edition style placement
+                    const fractionalX = adjustedPos.x - Math.floor(adjustedPos.x);
+                    const fractionalY = adjustedPos.y - Math.floor(adjustedPos.y);
+                    const fractionalZ = adjustedPos.z - Math.floor(adjustedPos.z);
+                    
+                    // If we're looking very close to the edge of a face, we might want to place in the adjacent block
+                    const edgeThreshold = 0.1;
+                    
+                    // Determine which face we're looking at
+                    if (Math.abs(faceNormal.x) > 0) {
+                        // Looking at X face
+                        if (Math.abs(fractionalY - 0.5) > 0.4 || Math.abs(fractionalZ - 0.5) > 0.4) {
+                            // We're near the edge in Y or Z direction
+                            // Check adjacent positions for support
+                            const adjacentPositions = [
+                                {x: blockX + faceNormal.x, y: blockY, z: blockZ},
+                                {x: blockX + faceNormal.x, y: blockY + 1, z: blockZ},
+                                {x: blockX + faceNormal.x, y: blockY - 1, z: blockZ},
+                                {x: blockX + faceNormal.x, y: blockY, z: blockZ + 1},
+                                {x: blockX + faceNormal.x, y: blockY, z: blockZ - 1}
+                            ];
+                            
+                            // Find any adjacent block that can provide support
+                            for (const pos of adjacentPositions) {
+                                const key = `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
+                                if (blocksMeshes.has(key)) {
+                                    blockX = Math.floor(pos.x);
+                                    blockY = Math.floor(pos.y);
+                                    blockZ = Math.floor(pos.z);
+                                    break;
+                                }
+                            }
                         }
-                        
-                        placementFaceNormal = intersect.face.normal;
-                        const pos = intersect.point.clone().add(placementFaceNormal.multiplyScalar(0.5));
-                        placementPos = {
-                            x: Math.floor(pos.x),
-                            y: Math.floor(pos.y),
-                            z: Math.floor(pos.z)
+                    } else if (Math.abs(faceNormal.y) > 0) {
+                        // Looking at Y face
+                        if (Math.abs(fractionalX - 0.5) > 0.4 || Math.abs(fractionalZ - 0.5) > 0.4) {
+                            // We're near the edge in X or Z direction
+                            const adjacentPositions = [
+                                {x: blockX, y: blockY + faceNormal.y, z: blockZ},
+                                {x: blockX + 1, y: blockY + faceNormal.y, z: blockZ},
+                                {x: blockX - 1, y: blockY + faceNormal.y, z: blockZ},
+                                {x: blockX, y: blockY + faceNormal.y, z: blockZ + 1},
+                                {x: blockX, y: blockY + faceNormal.y, z: blockZ - 1}
+                            ];
+                            
+                            for (const pos of adjacentPositions) {
+                                const key = `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
+                                if (blocksMeshes.has(key)) {
+                                    blockX = Math.floor(pos.x);
+                                    blockY = Math.floor(pos.y);
+                                    blockZ = Math.floor(pos.z);
+                                    break;
+                                }
+                            }
+                        }
+                    } else if (Math.abs(faceNormal.z) > 0) {
+                        // Looking at Z face
+                        if (Math.abs(fractionalX - 0.5) > 0.4 || Math.abs(fractionalY - 0.5) > 0.4) {
+                            // We're near the edge in X or Y direction
+                            const adjacentPositions = [
+                                {x: blockX, y: blockY, z: blockZ + faceNormal.z},
+                                {x: blockX + 1, y: blockY, z: blockZ + faceNormal.z},
+                                {x: blockX - 1, y: blockY, z: blockZ + faceNormal.z},
+                                {x: blockX, y: blockY + 1, z: blockZ + faceNormal.z},
+                                {x: blockX, y: blockY - 1, z: blockZ + faceNormal.z}
+                            ];
+                            
+                            for (const pos of adjacentPositions) {
+                                const key = `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
+                                if (blocksMeshes.has(key)) {
+                                    blockX = Math.floor(pos.x);
+                                    blockY = Math.floor(pos.y);
+                                    blockZ = Math.floor(pos.z);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Final check: make sure we're not placing inside a block
+                    const finalKey = `${blockX},${blockY},${blockZ}`;
+                    if (blocksMeshes.has(finalKey)) {
+                        socket.emit('notification', 'Cannot place inside another block!');
+                        return;
+                    }
+                    
+                    // Check player collision
+                    const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
+                    const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
+                    
+                    let canPlace = true;
+                    const playerFeetY = camera.position.y - currentEyeHeight;
+                    const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
+                    const blockMinY = blockY;
+                    const blockMaxY = blockY + 1;
+                    
+                    if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
+                        const dx = Math.abs(camera.position.x - (blockX + 0.5));
+                        const dz = Math.abs(camera.position.z - (blockZ + 0.5));
+                        if (dx < PLAYER_RADIUS * 1.2 && dz < PLAYER_RADIUS * 1.2) {
+                            canPlace = false;
+                            socket.emit('notification', 'Cannot place block inside yourself!');
+                        }
+                    }
+                    
+                    if (canPlace) {
+                        const type = currentSlot.type;
+                        socket.emit('placeAttempt', { x: blockX, y: blockY, z: blockZ, type });
+                    }
+                }
+                // Add ability to place blocks in mid-air when looking at nothing
+                else if (currentSlot && currentSlot.count > 0) {
+                    // Looking at empty space - Bedrock Edition allows placing blocks in mid-air
+                    // by "extending" from the last visible block face
+                    
+                    const blockData = BLOCK_TYPES[currentSlot.type];
+                    if (blockData && (blockData.isItem || blockData.isWeapon || blockData.isTool)) {
+                        socket.emit('notification', 'Cannot place items! Use Q to drop them.');
+                        return;
+                    }
+                    
+                    // Create a ray in the look direction
+                    const direction = new THREE.Vector3(0, 0, -1);
+                    direction.applyQuaternion(camera.quaternion);
+                    
+                    // Find the nearest block along the ray (up to 5 blocks away)
+                    let foundBlock = false;
+                    let blockPos = null;
+                    
+                    for (let i = 1; i <= 5; i++) {
+                        const checkPos = {
+                            x: camera.position.x + direction.x * i,
+                            y: camera.position.y + direction.y * i,
+                            z: camera.position.z + direction.z * i
                         };
-                    } else {
-                        // Bedrock Edition style: place in mid-air if there's a block nearby
-                        // Cast a longer ray to find where we're looking
-                        const maxDistance = 5;
-                        const direction = new THREE.Vector3(0, 0, -1);
-                        direction.applyQuaternion(camera.quaternion);
-                        direction.normalize();
                         
-                        // Calculate the point we're looking at at max distance
-                        const lookAtPoint = new THREE.Vector3(
-                            camera.position.x + direction.x * maxDistance,
-                            camera.position.y + direction.y * maxDistance,
-                            camera.position.z + direction.z * maxDistance
-                        );
+                        const checkX = Math.floor(checkPos.x);
+                        const checkY = Math.floor(checkPos.y);
+                        const checkZ = Math.floor(checkPos.z);
                         
-                        // Find the nearest block position to lookAtPoint
-                        const potentialX = Math.round(lookAtPoint.x - 0.5);
-                        const potentialY = Math.round(lookAtPoint.y - 0.5);
-                        const potentialZ = Math.round(lookAtPoint.z - 0.5);
-                        
-                        // Check if this position is already occupied
-                        const key = `${potentialX},${potentialY},${potentialZ}`;
-                        if (blocksMeshes.has(key)) {
-                            socket.emit('notification', 'Cannot place inside another block!');
-                            return;
-                        }
-                        
-                        // Check if there's at least one adjacent block (Bedrock Edition rule)
-                        const adjacentDirections = [
-                            [1, 0, 0], [-1, 0, 0],
-                            [0, 1, 0], [0, -1, 0],
-                            [0, 0, 1], [0, 0, -1]
+                        // Check all adjacent positions for support
+                        const adjacentPositions = [
+                            {x: checkX + 1, y: checkY, z: checkZ},
+                            {x: checkX - 1, y: checkY, z: checkZ},
+                            {x: checkX, y: checkY + 1, z: checkZ},
+                            {x: checkX, y: checkY - 1, z: checkZ},
+                            {x: checkX, y: checkY, z: checkZ + 1},
+                            {x: checkX, y: checkY, z: checkZ - 1}
                         ];
                         
-                        let hasAdjacentBlock = false;
-                        let adjacentFace = null;
-                        
-                        for (const [dx, dy, dz] of adjacentDirections) {
-                            const adjKey = `${potentialX + dx},${potentialY + dy},${potentialZ + dz}`;
-                            if (blocksMeshes.has(adjKey)) {
-                                hasAdjacentBlock = true;
-                                adjacentFace = new THREE.Vector3(-dx, -dy, -dz);
+                        for (const pos of adjacentPositions) {
+                            const key = `${pos.x},${pos.y},${pos.z}`;
+                            if (blocksMeshes.has(key)) {
+                                // Found a supporting block, place next to it
+                                blockPos = {x: checkX, y: checkY, z: checkZ};
+                                foundBlock = true;
                                 break;
                             }
                         }
                         
-                        if (!hasAdjacentBlock) {
-                            socket.emit('notification', 'No adjacent block to place against!');
-                            return;
-                        }
-                        
-                        placementPos = {
-                            x: potentialX,
-                            y: potentialY,
-                            z: potentialZ
-                        };
-                        placementFaceNormal = adjacentFace;
+                        if (foundBlock) break;
                     }
                     
-                    if (placementPos) {
-                        const blockX = placementPos.x;
-                        const blockY = placementPos.y;
-                        const blockZ = placementPos.z;
-                        
-                        // Check distance
-                        const eyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
-                        const playerEyeY = camera.position.y;
-                        const blockCenterY = blockY + 0.5;
-                        
-                        const dist = Math.hypot(
-                            camera.position.x - (blockX + 0.5),
-                            playerEyeY - blockCenterY,
-                            camera.position.z - (blockZ + 0.5)
-                        );
-                        
-                        if (dist > 5) {
-                            socket.emit('notification', 'Too far away!');
-                            return;
-                        }
-                        
-                        // Check player collision
+                    if (foundBlock && blockPos) {
+                        // Final collision check
                         const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
                         const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
                         
                         let canPlace = true;
                         const playerFeetY = camera.position.y - currentEyeHeight;
                         const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
-                        const blockMinY = blockY;
-                        const blockMaxY = blockY + 1;
+                        const blockMinY = blockPos.y;
+                        const blockMaxY = blockPos.y + 1;
                         
                         if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
-                            const dx = Math.abs(camera.position.x - (blockX + 0.5));
-                            const dz = Math.abs(camera.position.z - (blockZ + 0.5));
-                            if (dx < PLAYER_RADIUS * 0.6 && dz < PLAYER_RADIUS * 0.6) {
+                            const dx = Math.abs(camera.position.x - (blockPos.x + 0.5));
+                            const dz = Math.abs(camera.position.z - (blockPos.z + 0.5));
+                            if (dx < PLAYER_RADIUS * 1.2 && dz < PLAYER_RADIUS * 1.2) {
                                 canPlace = false;
+                                socket.emit('notification', 'Cannot place block inside yourself!');
                             }
                         }
                         
                         if (canPlace) {
                             const type = currentSlot.type;
-                            socket.emit('placeAttempt', { x: blockX, y: blockY, z: blockZ, type });
+                            socket.emit('placeAttempt', { x: blockPos.x, y: blockPos.y, z: blockPos.z, type });
                         }
+                    } else {
+                        socket.emit('notification', 'No supporting block found for placement!');
                     }
                 }
             }
@@ -2776,7 +2863,8 @@
                     });
                     const item = new THREE.Sprite(material);
                     item.scale.set(0.4, 0.4, 1);
-                    item.position.set(-0.3, 0.8, 0);
+                    // Move item 1 block further in front of player
+                    item.position.set(-0.3, 0.8, 1.0); // Changed from 0 to 1.0
                     item.userData = { type: 'item', playerId: id, itemType: itemType };
                     
                     op.group.add(item);
@@ -2793,7 +2881,8 @@
             
             const item = new THREE.Sprite(material);
             item.scale.set(0.4, 0.4, 1);
-            item.position.set(-0.3, 0.8, 0); // Position in right hand
+            // Move item 1 block further in front of player
+            item.position.set(-0.3, 0.8, 1.0); // Changed from 0 to 1.0
             item.userData = { type: 'item', playerId: id, itemType: itemType };
             
             op.group.add(item);
