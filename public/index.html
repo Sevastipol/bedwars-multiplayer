@@ -1256,14 +1256,14 @@
             });
             
             const mesh = new THREE.Sprite(material);
-            mesh.scale.set(0.5, 0.5, 1);
+            mesh.scale.set(0.25, 0.25, 1);
             
             return mesh;
         }
 
         function removeWeaponToolFromHand() {
             if (weaponToolInHand) {
-                scene.remove(weaponToolInHand);
+                camera.remove(weaponToolInHand);
                 if (weaponToolInHand.material) weaponToolInHand.material.dispose();
                 weaponToolInHand = null;
             }
@@ -1282,32 +1282,12 @@
                 if (itemData.isWeapon || itemData.isTool) {
                     weaponToolInHand = createWeaponToolMesh(currentSlot.type);
                     if (weaponToolInHand) {
-                        // Add to scene
-                        scene.add(weaponToolInHand);
+                        // NEW: Position 0.5 blocks in front of camera
+                        weaponToolInHand.position.set(0, 0, -0.5);
+                        camera.add(weaponToolInHand);
                     }
                 }
             }
-        }
-
-        function updateWeaponPosition() {
-            if (!weaponToolInHand) return;
-            
-            // Calculate position 0.5 units in front of camera
-            const direction = new THREE.Vector3(0, 0, -1);
-            direction.applyQuaternion(camera.quaternion);
-            direction.normalize();
-            
-            const distance = 0.5; // 0.5 blocks in front
-            const weaponPosition = new THREE.Vector3(
-                camera.position.x + direction.x * distance,
-                camera.position.y + direction.y * distance - 0.2, // Slightly lower
-                camera.position.z + direction.z * distance
-            );
-            
-            weaponToolInHand.position.copy(weaponPosition);
-            
-            // Make weapon face the camera (so it's always visible)
-            weaponToolInHand.lookAt(camera.position);
         }
 
         // --- Breaking Animation Functions for Other Players ---
@@ -1831,6 +1811,7 @@
                     return;
                 }
                 
+                // BEDROCK-EDITION STYLE PLACEMENT
                 const blockIntersects = raycaster.intersectObjects(blocksInScene);
                 if (blockIntersects.length > 0 && currentSlot && currentSlot.count > 0) {
                     const intersect = blockIntersects[0];
@@ -1846,32 +1827,97 @@
                         return;
                     }
                     
-                    const pos = intersect.point.clone().add(intersect.face.normal.multiplyScalar(0.5));
-
+                    // Place block on the face we're looking at
+                    const faceNormal = intersect.face.normal;
+                    const hitPoint = intersect.point;
+                    
+                    // Calculate the adjacent position (where to place the new block)
+                    const placeX = Math.floor(hitPoint.x + faceNormal.x * 0.5);
+                    const placeY = Math.floor(hitPoint.y + faceNormal.y * 0.5);
+                    const placeZ = Math.floor(hitPoint.z + faceNormal.z * 0.5);
+                    
+                    // Check if position is already occupied
+                    const placeKey = `${placeX},${placeY},${placeZ}`;
+                    if (blocksMeshes.has(placeKey)) {
+                        socket.emit('notification', 'Cannot place block inside another block!');
+                        return;
+                    }
+                    
+                    // Check player collision with more accurate bounds
                     const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
-                    const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
-
-                    const blockX = Math.floor(pos.x);
-                    const blockY = Math.floor(pos.y);
-                    const blockZ = Math.floor(pos.z);
-
-                    let canPlace = true;
                     const playerFeetY = camera.position.y - currentEyeHeight;
-                    const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
-                    const blockMinY = blockY;
-                    const blockMaxY = blockY + 1;
+                    const playerHeadY = camera.position.y - currentEyeHeight + (isCrouching ? 1.3 : PLAYER_HEIGHT);
+                    
+                    // Create player bounding box
+                    const playerMinX = camera.position.x - PLAYER_RADIUS;
+                    const playerMaxX = camera.position.x + PLAYER_RADIUS;
+                    const playerMinZ = camera.position.z - PLAYER_RADIUS;
+                    const playerMaxZ = camera.position.z + PLAYER_RADIUS;
+                    
+                    // Block bounding box
+                    const blockMinX = placeX;
+                    const blockMaxX = placeX + 1;
+                    const blockMinY = placeY;
+                    const blockMaxY = placeY + 1;
+                    const blockMinZ = placeZ;
+                    const blockMaxZ = placeZ + 1;
+                    
+                    // Check if block intersects with player
                     if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
-                        const dx = Math.abs(camera.position.x - (blockX + 0.5));
-                        const dz = Math.abs(camera.position.z - (blockZ + 0.5));
-                        if (dx < PLAYER_RADIUS * 0.6 && dz < PLAYER_RADIUS * 0.6) {
-                            canPlace = false;
+                        if (blockMaxX > playerMinX && blockMinX < playerMaxX &&
+                            blockMaxZ > playerMinZ && blockMinZ < playerMaxZ) {
+                            socket.emit('notification', 'Cannot place block inside yourself!');
+                            return;
                         }
                     }
-
-                    if (canPlace) {
-                        const type = currentSlot.type;
-                        socket.emit('placeAttempt', { x: blockX, y: blockY, z: blockZ, type });
+                    
+                    // Additional check: Make sure there's at least one adjacent solid block
+                    // (except when placing on existing blocks, which we already have)
+                    const adjacentPositions = [
+                        [placeX + 1, placeY, placeZ],
+                        [placeX - 1, placeY, placeZ],
+                        [placeX, placeY + 1, placeZ],
+                        [placeX, placeY - 1, placeZ],
+                        [placeX, placeY, placeZ + 1],
+                        [placeX, placeY, placeZ - 1]
+                    ];
+                    
+                    let hasAdjacentBlock = false;
+                    for (const [adjX, adjY, adjZ] of adjacentPositions) {
+                        const adjKey = `${adjX},${adjY},${adjZ}`;
+                        if (blocksMeshes.has(adjKey)) {
+                            hasAdjacentBlock = true;
+                            break;
+                        }
                     }
+                    
+                    // Allow placement even in air (like Bedrock) but check if it's too far from any block
+                    if (!hasAdjacentBlock) {
+                        // Check if it's within 2 blocks of any existing block
+                        let tooFar = true;
+                        for (const block of blocksInScene) {
+                            const blockX = Math.floor(block.position.x - 0.5);
+                            const blockY = Math.floor(block.position.y - 0.5);
+                            const blockZ = Math.floor(block.position.z - 0.5);
+                            
+                            const dx = Math.abs(placeX - blockX);
+                            const dy = Math.abs(placeY - blockY);
+                            const dz = Math.abs(placeZ - blockZ);
+                            
+                            if (dx <= 2 && dy <= 2 && dz <= 2) {
+                                tooFar = false;
+                                break;
+                            }
+                        }
+                        
+                        if (tooFar) {
+                            socket.emit('notification', 'Cannot place block in mid-air!');
+                            return;
+                        }
+                    }
+                    
+                    const type = currentSlot.type;
+                    socket.emit('placeAttempt', { x: placeX, y: placeY, z: placeZ, type });
                 }
             }
         });
@@ -1951,20 +1997,18 @@
             
             cleanupOldBreakingOverlays();
 
-            // Update weapon position in world space
+            // Weapon/tool bobbing animation
             if (weaponToolInHand && !isSpectator) {
-                updateWeaponPosition();
-                
-                // Add bobbing animation
                 swordBobTime += delta * 10;
                 const bobAmount = Math.sin(swordBobTime) * 0.05;
-                
-                // Apply bobbing effect by moving weapon slightly up and down
-                weaponToolInHand.position.y += bobAmount;
+                // Keep Z at -0.5, only bob Y axis
+                weaponToolInHand.position.set(0, bobAmount, -0.5);
                 
                 // Slight rotation for swinging effect when moving
                 if (moveState.fwd || moveState.bwd || moveState.l || moveState.r) {
-                    weaponToolInHand.rotation.z += Math.sin(swordBobTime * 2) * 0.1;
+                    weaponToolInHand.rotation.z = Math.sin(swordBobTime * 2) * 0.1;
+                } else {
+                    weaponToolInHand.rotation.z = 0;
                 }
             }
 
@@ -2351,18 +2395,29 @@
                     // Make item face the camera
                     item.lookAt(camera.position);
                     
+                    // Position item 0.5 blocks in front of player (in right hand)
+                    const rightHandPos = new THREE.Vector3(-0.3, 0.8, 0);
+                    
+                    // Transform to world space
+                    const worldPos = new THREE.Vector3();
+                    data.group.localToWorld(worldPos.copy(rightHandPos));
+                    
+                    // Move 0.5 blocks forward from hand position
+                    const playerForward = new THREE.Vector3();
+                    data.group.getWorldDirection(playerForward);
+                    playerForward.multiplyScalar(0.5);
+                    
+                    item.position.copy(worldPos).add(playerForward);
+                    
                     // Add subtle bobbing animation when player is moving
                     const isMoving = data.group.position.distanceTo(data.lastPos || data.group.position) > 0.01;
                     if (isMoving) {
                         // Bobbing animation
                         const bobOffset = Math.sin(time * 0.01) * 0.05;
-                        item.position.y = 0.8 + bobOffset;
+                        item.position.y += bobOffset;
                         
                         // Slight rotation
                         item.rotation.z = Math.PI / 4 + Math.sin(time * 0.005) * 0.1;
-                    } else {
-                        item.position.y = 0.8;
-                        item.rotation.z = Math.PI / 4;
                     }
                     
                     // Store last position for movement detection
@@ -2707,6 +2762,8 @@
                     });
                     const item = new THREE.Sprite(material);
                     item.scale.set(0.4, 0.4, 1);
+                    
+                    // Position in right hand, will be adjusted in animate()
                     item.position.set(-0.3, 0.8, 0);
                     item.userData = { type: 'item', playerId: id, itemType: itemType };
                     
@@ -2724,7 +2781,9 @@
             
             const item = new THREE.Sprite(material);
             item.scale.set(0.4, 0.4, 1);
-            item.position.set(-0.3, 0.8, 0); // Position in right hand
+            
+            // Position in right hand, will be adjusted in animate()
+            item.position.set(-0.3, 0.8, 0);
             item.userData = { type: 'item', playerId: id, itemType: itemType };
             
             op.group.add(item);
