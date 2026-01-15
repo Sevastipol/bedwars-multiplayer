@@ -1,4 +1,3 @@
-
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -353,7 +352,7 @@ function resetGame() {
         p.spectator = true;
         p.health = PLAYER_MAX_HEALTH;
         p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
-        p.equippedWeapon = null;
+        p.equippedItem = null;
         p.lastEnderpearlThrow = 0;
         p.lastFireballThrow = 0;
         p.lastWindchargeThrow = 0;
@@ -581,10 +580,10 @@ io.on('connection', (socket) => {
         health: PLAYER_MAX_HEALTH,
         id: socket.id,
         lastHitTime: 0,
-        equippedWeapon: null,
+        equippedItem: null,
         lastEnderpearlThrow: 0,
-        lastFireballThrow: 0,  // Fixed: changed = to :
-        lastWindchargeThrow: 0  // Fixed: changed = to :
+        lastFireballThrow: 0,
+        lastWindchargeThrow: 0
     };
     
     players.set(socket.id, playerState);
@@ -621,7 +620,7 @@ io.on('connection', (socket) => {
             crouch: p.crouch,
             spectator: p.spectator,
             health: p.health,
-            equippedWeapon: p.equippedWeapon
+            equippedItem: p.equippedItem
         }));
     socket.emit('playersSnapshot', otherPlayers);
 
@@ -632,7 +631,7 @@ io.on('connection', (socket) => {
         crouch: playerState.crouch,
         spectator: playerState.spectator,
         health: playerState.health,
-        equippedWeapon: playerState.equippedWeapon
+        equippedItem: playerState.equippedItem
     });
 
     updateWaitingMessages();
@@ -649,7 +648,7 @@ io.on('connection', (socket) => {
             p.crouch = data.crouch;
             p.selected = data.selected;
             p.spectator = data.spectator;
-            p.equippedWeapon = data.equippedWeapon;
+            p.equippedItem = data.equippedItem;
         }
     });
 
@@ -740,8 +739,8 @@ io.on('connection', (socket) => {
         slot.count--;
         if (slot.count === 0) {
             p.inventory[p.selected] = null;
-            if (BLOCK_TYPES[type] && BLOCK_TYPES[type].isWeapon && p.selected === p.selected) {
-                p.equippedWeapon = null;
+            if (BLOCK_TYPES[type] && (BLOCK_TYPES[type].isWeapon || BLOCK_TYPES[type].isTool) && p.selected === p.selected) {
+                p.equippedItem = null;
             }
         }
         addBlock(x, y, z, type);
@@ -760,8 +759,8 @@ io.on('connection', (socket) => {
         if (slot.count <= 0) {
             p.inventory[p.selected] = null;
             
-            if (BLOCK_TYPES[slot.type] && BLOCK_TYPES[slot.type].isWeapon) {
-                p.equippedWeapon = null;
+            if (BLOCK_TYPES[slot.type] && (BLOCK_TYPES[slot.type].isWeapon || BLOCK_TYPES[slot.type].isTool)) {
+                p.equippedItem = null;
             }
         }
         
@@ -799,10 +798,10 @@ io.on('connection', (socket) => {
         socket.emit('updateCurrency', { ...p.currency });
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
         
-        if (data.isWeapon && p.selected !== null) {
+        if ((data.isWeapon || data.isTool) && p.selected !== null) {
             const slot = p.inventory[p.selected];
             if (slot && slot.type === btype) {
-                p.equippedWeapon = btype;
+                p.equippedItem = btype;
             }
         }
     });
@@ -828,10 +827,10 @@ io.on('connection', (socket) => {
         }
         
         let damage = 1;
-        if (attacker.equippedWeapon) {
-            const weaponData = BLOCK_TYPES[attacker.equippedWeapon];
-            if (weaponData && weaponData.isWeapon) {
-                damage = weaponData.damage;
+        if (attacker.equippedItem) {
+            const itemData = BLOCK_TYPES[attacker.equippedItem];
+            if (itemData && itemData.isWeapon) {
+                damage = itemData.damage;
             }
         }
         
@@ -1816,7 +1815,7 @@ setInterval(() => {
         crouch: p.crouch,
         spectator: p.spectator,
         health: p.health,
-        equippedWeapon: p.equippedWeapon
+        equippedItem: p.equippedItem
     }));
     io.emit('playersUpdate', states);
 }, 50);
