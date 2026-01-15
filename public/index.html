@@ -1282,8 +1282,8 @@
                 if (itemData.isWeapon || itemData.isTool) {
                     weaponToolInHand = createWeaponToolMesh(currentSlot.type);
                     if (weaponToolInHand) {
-                        // CHANGED: Position weapon 0.5 blocks in front of the camera
-                        weaponToolInHand.position.set(0.2, -0.2, -0.5);
+                        // Attach to camera for first-person view - CHANGED: from -0.5 to -1.5
+                        weaponToolInHand.position.set(0.3, -0.3, -1.5);
                         camera.add(weaponToolInHand);
                     }
                 }
@@ -1811,18 +1811,8 @@
                     return;
                 }
                 
-                // NEW: Bedrock-style block placement - place blocks in mid-air if adjacent to existing block
-                const blockIntersects = raycaster.intersectObjects(blocksInScene);
-                let placementPos = null;
-                
-                if (blockIntersects.length > 0 && currentSlot && currentSlot.count > 0) {
-                    // Traditional placement: on the face of an existing block
-                    const intersect = blockIntersects[0];
-                    if (intersect.distance > 5) {
-                        socket.emit('notification', 'Too far away!');
-                        return;
-                    }
-                    
+                // Bedrock Edition block placement logic
+                if (currentSlot && currentSlot.count > 0) {
                     // Check if item can be placed
                     const blockData = BLOCK_TYPES[currentSlot.type];
                     if (blockData && (blockData.isItem || blockData.isWeapon || blockData.isTool)) {
@@ -1830,51 +1820,129 @@
                         return;
                     }
                     
-                    placementPos = intersect.point.clone().add(intersect.face.normal.multiplyScalar(0.5));
-                } else if (currentSlot && currentSlot.count > 0) {
-                    // NEW: Bedrock-style mid-air placement
-                    const blockData = BLOCK_TYPES[currentSlot.type];
-                    if (blockData && (blockData.isItem || blockData.isWeapon || blockData.isTool)) {
-                        socket.emit('notification', 'Cannot place items! Use Q to drop them.');
-                        return;
-                    }
+                    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                    const blockIntersects = raycaster.intersectObjects(blocksInScene);
                     
-                    // Get look direction and find placement position 5 blocks away
-                    const direction = new THREE.Vector3(0, 0, -1);
-                    direction.applyQuaternion(camera.quaternion);
-                    direction.normalize();
+                    let placementPos = null;
+                    let placementFaceNormal = null;
                     
-                    const lookDistance = 5;
-                    const lookTarget = camera.position.clone().add(direction.multiplyScalar(lookDistance));
-                    
-                    placementPos = lookTarget;
-                }
-                
-                if (placementPos) {
-                    const blockX = Math.floor(placementPos.x);
-                    const blockY = Math.floor(placementPos.y);
-                    const blockZ = Math.floor(placementPos.z);
-
-                    // Check for collision with player
-                    let canPlace = true;
-                    const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
-                    const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
-
-                    const playerFeetY = camera.position.y - currentEyeHeight;
-                    const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
-                    const blockMinY = blockY;
-                    const blockMaxY = blockY + 1;
-                    if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
-                        const dx = Math.abs(camera.position.x - (blockX + 0.5));
-                        const dz = Math.abs(camera.position.z - (blockZ + 0.5));
-                        if (dx < PLAYER_RADIUS * 0.6 && dz < PLAYER_RADIUS * 0.6) {
-                            canPlace = false;
+                    if (blockIntersects.length > 0) {
+                        // Standard placement: place on the face of the block we're looking at
+                        const intersect = blockIntersects[0];
+                        if (intersect.distance > 5) {
+                            socket.emit('notification', 'Too far away!');
+                            return;
                         }
+                        
+                        placementFaceNormal = intersect.face.normal;
+                        const pos = intersect.point.clone().add(placementFaceNormal.multiplyScalar(0.5));
+                        placementPos = {
+                            x: Math.floor(pos.x),
+                            y: Math.floor(pos.y),
+                            z: Math.floor(pos.z)
+                        };
+                    } else {
+                        // Bedrock Edition style: place in mid-air if there's a block nearby
+                        // Cast a longer ray to find where we're looking
+                        const maxDistance = 5;
+                        const direction = new THREE.Vector3(0, 0, -1);
+                        direction.applyQuaternion(camera.quaternion);
+                        direction.normalize();
+                        
+                        // Calculate the point we're looking at at max distance
+                        const lookAtPoint = new THREE.Vector3(
+                            camera.position.x + direction.x * maxDistance,
+                            camera.position.y + direction.y * maxDistance,
+                            camera.position.z + direction.z * maxDistance
+                        );
+                        
+                        // Find the nearest block position to lookAtPoint
+                        const potentialX = Math.round(lookAtPoint.x - 0.5);
+                        const potentialY = Math.round(lookAtPoint.y - 0.5);
+                        const potentialZ = Math.round(lookAtPoint.z - 0.5);
+                        
+                        // Check if this position is already occupied
+                        const key = `${potentialX},${potentialY},${potentialZ}`;
+                        if (blocksMeshes.has(key)) {
+                            socket.emit('notification', 'Cannot place inside another block!');
+                            return;
+                        }
+                        
+                        // Check if there's at least one adjacent block (Bedrock Edition rule)
+                        const adjacentDirections = [
+                            [1, 0, 0], [-1, 0, 0],
+                            [0, 1, 0], [0, -1, 0],
+                            [0, 0, 1], [0, 0, -1]
+                        ];
+                        
+                        let hasAdjacentBlock = false;
+                        let adjacentFace = null;
+                        
+                        for (const [dx, dy, dz] of adjacentDirections) {
+                            const adjKey = `${potentialX + dx},${potentialY + dy},${potentialZ + dz}`;
+                            if (blocksMeshes.has(adjKey)) {
+                                hasAdjacentBlock = true;
+                                adjacentFace = new THREE.Vector3(-dx, -dy, -dz);
+                                break;
+                            }
+                        }
+                        
+                        if (!hasAdjacentBlock) {
+                            socket.emit('notification', 'No adjacent block to place against!');
+                            return;
+                        }
+                        
+                        placementPos = {
+                            x: potentialX,
+                            y: potentialY,
+                            z: potentialZ
+                        };
+                        placementFaceNormal = adjacentFace;
                     }
-
-                    if (canPlace) {
-                        const type = currentSlot.type;
-                        socket.emit('placeAttempt', { x: blockX, y: blockY, z: blockZ, type });
+                    
+                    if (placementPos) {
+                        const blockX = placementPos.x;
+                        const blockY = placementPos.y;
+                        const blockZ = placementPos.z;
+                        
+                        // Check distance
+                        const eyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
+                        const playerEyeY = camera.position.y;
+                        const blockCenterY = blockY + 0.5;
+                        
+                        const dist = Math.hypot(
+                            camera.position.x - (blockX + 0.5),
+                            playerEyeY - blockCenterY,
+                            camera.position.z - (blockZ + 0.5)
+                        );
+                        
+                        if (dist > 5) {
+                            socket.emit('notification', 'Too far away!');
+                            return;
+                        }
+                        
+                        // Check player collision
+                        const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
+                        const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
+                        
+                        let canPlace = true;
+                        const playerFeetY = camera.position.y - currentEyeHeight;
+                        const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
+                        const blockMinY = blockY;
+                        const blockMaxY = blockY + 1;
+                        
+                        if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
+                            const dx = Math.abs(camera.position.x - (blockX + 0.5));
+                            const dz = Math.abs(camera.position.z - (blockZ + 0.5));
+                            if (dx < PLAYER_RADIUS * 0.6 && dz < PLAYER_RADIUS * 0.6) {
+                                canPlace = false;
+                            }
+                        }
+                        
+                        if (canPlace) {
+                            const type = currentSlot.type;
+                            socket.emit('placeAttempt', { x: blockX, y: blockY, z: blockZ, type });
+                        }
                     }
                 }
             }
@@ -1959,7 +2027,7 @@
             if (weaponToolInHand && !isSpectator) {
                 swordBobTime += delta * 10;
                 const bobAmount = Math.sin(swordBobTime) * 0.05;
-                weaponToolInHand.position.y = -0.2 + bobAmount;
+                weaponToolInHand.position.y = -0.3 + bobAmount;
                 
                 // Slight rotation for swinging effect when moving
                 if (moveState.fwd || moveState.bwd || moveState.l || moveState.r) {
