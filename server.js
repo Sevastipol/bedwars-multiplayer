@@ -873,7 +873,7 @@ io.on('connection', (socket) => {
                     newHealth: target.health
                 });
                 
-                io.to(targetId).emit('notification', 'You died and respawned at your bed! Health restored to 10!');
+                io.to(targetId).emit('notification', 'You died and respawned at your bed!');
             } else {
                 eliminatePlayer(targetId, attacker.id);
             }
@@ -1102,8 +1102,6 @@ io.on('connection', (socket) => {
             if (player.spectator) return;
             
             applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
-            
-            io.to(playerId).emit('notification', 'Knocked back by fireball!');
         });
         
         const blocksDestroyed = [];
@@ -1433,12 +1431,11 @@ setInterval(() => {
                             newHealth: directHitPlayer.player.health
                         });
                         
-                        io.to(directHitPlayer.id).emit('notification', 'You died from a fireball and respawned at your bed! Health restored to 10!');
+                        io.to(directHitPlayer.id).emit('notification', 'You died to a fireball and respawned at your bed!');
                     } else {
                         eliminatePlayer(directHitPlayer.id, fireball.owner);
                     }
                 } else {
-                    io.to(directHitPlayer.id).emit('notification', 'Direct fireball hit! -6 damage');
                 }
                 
                 const explosionX = Math.floor(fireball.pos.x);
@@ -1484,7 +1481,6 @@ setInterval(() => {
                     applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
                     
                     if (playerId !== directHitPlayer.id) {
-                        io.to(playerId).emit('notification', 'Knocked back by fireball!');
                     }
                 });
                 
@@ -1537,7 +1533,6 @@ setInterval(() => {
                             
                             applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
                             
-                            io.to(playerId).emit('notification', 'Knocked back by fireball!');
                         });
                         
                         const blocksDestroyed = [];
@@ -1651,7 +1646,6 @@ setInterval(() => {
                 
                 applyKnockback(directHitPlayer.player, windcharge.pos, 8.0, 1.5, true);
                 
-                io.to(directHitPlayer.id).emit('notification', 'Direct wind charge hit!');
                 console.log(`Wind charge direct hit: ${directHitPlayer.id} - 8 blocks knockback`);
                 
                 const explosionX = Math.floor(windcharge.pos.x);
@@ -1705,7 +1699,6 @@ setInterval(() => {
                             
                             applyExplosionKnockback(player, explosionPos, explosionRadius, explosionForce);
                             
-                            io.to(playerId).emit('notification', 'Wind charge explosion!');
                         });
                         
                         io.emit('windchargeExplosion', {
@@ -1788,7 +1781,7 @@ setInterval(() => {
                     p.rot.pitch = 0;
                     
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
-                    io.to(id).emit('notification', 'You fell into the void and respawned at your bed! Health restored to 10!');
+                    io.to(id).emit('notification', 'You fell into the void and respawned at your bed!');
                     
                     // Update other players about the health restoration
                     io.emit('playerHit', {
