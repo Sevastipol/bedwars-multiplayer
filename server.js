@@ -648,7 +648,7 @@ io.on('connection', (socket) => {
             p.crouch = data.crouch;
             p.selected = data.selected;
             p.spectator = data.spectator;
-            p.equippedItem = data.equippedItem;
+            p.equippedItem = data.equippedWeapon; // Update equipped item from client
         }
     });
 
@@ -852,8 +852,7 @@ io.on('connection', (socket) => {
             const hasBed = target.bedPos && blocks.get(bedKey) === 'Bed';
             
             if (hasBed) {
-                // RESTORE HEALTH TO 10 WHEN RESPAWNING FROM DEATH
-                target.health = PLAYER_MAX_HEALTH; // This is 10
+                target.health = PLAYER_MAX_HEALTH;
                 
                 target.pos.x = target.bedPos.x + 0.5;
                 target.pos.y = target.bedPos.y + 2 + 1.6;
@@ -1410,8 +1409,7 @@ setInterval(() => {
                     const hasBed = directHitPlayer.player.bedPos && blocks.get(bedKey) === 'Bed';
                     
                     if (hasBed) {
-                        // RESTORE HEALTH TO 10 WHEN RESPAWNING FROM FIREBALL DEATH
-                        directHitPlayer.player.health = PLAYER_MAX_HEALTH; // This is 10
+                        directHitPlayer.player.health = PLAYER_MAX_HEALTH;
                         
                         directHitPlayer.player.pos.x = directHitPlayer.player.bedPos.x + 0.5;
                         directHitPlayer.player.pos.y = directHitPlayer.player.bedPos.y + 2 + 1.6;
@@ -1771,8 +1769,7 @@ setInterval(() => {
                 const hasBed = p.bedPos && blocks.get(bedKey) === 'Bed';
                 
                 if (hasBed) {
-                    // RESTORE HEALTH TO 10 WHEN RESPAWNING FROM FALLING
-                    p.health = PLAYER_MAX_HEALTH; // This is 10
+                    p.health = PLAYER_MAX_HEALTH;
                     
                     p.pos.x = p.bedPos.x + 0.5;
                     p.pos.y = p.bedPos.y + 2 + 1.6;
