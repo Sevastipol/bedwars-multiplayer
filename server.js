@@ -748,6 +748,28 @@ io.on('connection', (socket) => {
             return;
         }
         
+        // Bedrock Edition validation: Check if block is adjacent to an existing block
+        const adjacentDirections = [
+            [1, 0, 0], [-1, 0, 0],
+            [0, 1, 0], [0, -1, 0],
+            [0, 0, 1], [0, 0, -1]
+        ];
+        
+        let hasAdjacentBlock = false;
+        for (const [dx, dy, dz] of adjacentDirections) {
+            const adjKey = blockKey(x + dx, y + dy, z + dz);
+            if (blocks.has(adjKey)) {
+                hasAdjacentBlock = true;
+                break;
+            }
+        }
+        
+        if (!hasAdjacentBlock) {
+            socket.emit('revertPlace', { x, y, z });
+            socket.emit('notification', 'No adjacent block to place against!');
+            return;
+        }
+        
         const eyeHeight = p.crouch ? 1.3 : 1.6;
         const playerEyeY = p.pos.y;
         const blockCenterY = y + 0.5;
@@ -761,51 +783,6 @@ io.on('connection', (socket) => {
         if (dist > 5.5) {
             socket.emit('revertPlace', { x, y, z });
             socket.emit('notification', 'Too far away!');
-            return;
-        }
-        
-        // NEW: Bedrock-style placement - check if block has adjacent support
-        const adjacentKeys = [
-            blockKey(x + 1, y, z),
-            blockKey(x - 1, y, z),
-            blockKey(x, y + 1, z),
-            blockKey(x, y - 1, z),
-            blockKey(x, y, z + 1),
-            blockKey(x, y, z - 1)
-        ];
-        
-        let hasAdjacent = false;
-        for (let key of adjacentKeys) {
-            if (blocks.has(key)) {
-                hasAdjacent = true;
-                break;
-            }
-        }
-        
-        if (!hasAdjacent) {
-            // Check diagonal positions too (like Bedrock)
-            const diagonalKeys = [
-                blockKey(x + 1, y + 1, z),
-                blockKey(x - 1, y + 1, z),
-                blockKey(x, y + 1, z + 1),
-                blockKey(x, y + 1, z - 1),
-                blockKey(x + 1, y, z + 1),
-                blockKey(x - 1, y, z - 1),
-                blockKey(x + 1, y, z - 1),
-                blockKey(x - 1, y, z + 1)
-            ];
-            
-            for (let key of diagonalKeys) {
-                if (blocks.has(key)) {
-                    hasAdjacent = true;
-                    break;
-                }
-            }
-        }
-        
-        if (!hasAdjacent) {
-            socket.emit('revertPlace', { x, y, z });
-            socket.emit('notification', 'Cannot place block without adjacent support!');
             return;
         }
         
@@ -1304,7 +1281,6 @@ io.on('connection', (socket) => {
                         break;
                     }
                 }
-                p.bedPos = null;
             }
             
             if (gameActive && !p.spectator) {
