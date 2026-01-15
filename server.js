@@ -68,8 +68,8 @@ const goldIslands = [
     {offsetX: 9, offsetZ: 33, spawnerX: 11.5, spawnerY: 1, spawnerZ: 35.5}
 ];
 
-// Emerald island position
-const emeraldIsland = {offsetX: 9, offsetZ: 9, spawnerX: 11.5, spawnerY: 1, spawnerZ: 11.5};
+// Emerald island position - UPDATED to 8x8 island
+const emeraldIsland = {offsetX: 8, offsetZ: 8};
 
 let occupiedIronIslands = [];
 
@@ -188,15 +188,16 @@ function stopRoundTimer() {
     }
 }
 
-function createIsland(offsetX, offsetZ, spawnerType = null) {
-    for (let x = 0; x < 6; x++) {
-        for (let z = 0; z < 6; z++) {
+function createIsland(offsetX, offsetZ, spawnerType = null, size = 6) {
+    for (let x = 0; x < size; x++) {
+        for (let z = 0; z < size; z++) {
             addBlock(offsetX + x, 0, offsetZ + z, 'Grass');
         }
     }
     if (spawnerType) {
+        const center = (size - 1) / 2;
         const s = {
-            x: offsetX + 2.5, y: 1, z: offsetZ + 2.5,
+            x: offsetX + center, y: 1, z: offsetZ + center,
             resourceType: spawnerType.type,
             interval: spawnerType.interval * 1000,
             lastSpawn: Date.now()
@@ -222,7 +223,8 @@ function initWorld() {
         createIsland(island.offsetX, island.offsetZ, { type: 'gold', interval: 8 });
     });
     
-    createIsland(emeraldIsland.offsetX, emeraldIsland.offsetZ, { type: 'emerald', interval: 10 });
+    // Emerald island is now 8x8
+    createIsland(emeraldIsland.offsetX, emeraldIsland.offsetZ, { type: 'emerald', interval: 10 }, 8);
     
     occupiedIronIslands = [];
 }
@@ -296,7 +298,7 @@ function eliminatePlayer(playerId, eliminatorId) {
     
     p.spectator = true;
     p.health = PLAYER_MAX_HEALTH;
-    p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
+    p.pos = { x: emeraldIsland.offsetX + 3.5, y: 50, z: emeraldIsland.offsetZ + 3.5 };
     
     if (p.bedPos) {
         for (let i = 0; i < ironIslands.length; i++) {
@@ -351,7 +353,7 @@ function resetGame() {
         p.bedPos = null;
         p.spectator = true;
         p.health = PLAYER_MAX_HEALTH;
-        p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
+        p.pos = { x: emeraldIsland.offsetX + 3.5, y: 50, z: emeraldIsland.offsetZ + 3.5 };
         p.equippedItem = null;
         p.lastEnderpearlThrow = 0;
         p.lastFireballThrow = 0;
@@ -568,7 +570,7 @@ io.on('connection', (socket) => {
     console.log(`New connection: ${socket.id}`);
     
     const playerState = {
-        pos: { x: 9 + 2.5, y: 50, z: 9 + 2.5 },
+        pos: { x: emeraldIsland.offsetX + 3.5, y: 50, z: emeraldIsland.offsetZ + 3.5 },
         rot: { yaw: 0, pitch: 0 },
         crouch: false,
         inventory: new Array(INVENTORY_SIZE).fill(null),
