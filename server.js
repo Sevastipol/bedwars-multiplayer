@@ -68,8 +68,8 @@ const goldIslands = [
     {offsetX: 9, offsetZ: 33, spawnerX: 11.5, spawnerY: 1, spawnerZ: 35.5}
 ];
 
-// Emerald island position - UPDATED to 8x8 island
-const emeraldIsland = {offsetX: 8, offsetZ: 8};
+// Emerald island position - Updated to 8x8
+const emeraldIsland = {offsetX: 8, offsetZ: 8, spawnerX: 11.5, spawnerY: 1, spawnerZ: 11.5};
 
 let occupiedIronIslands = [];
 
@@ -188,16 +188,39 @@ function stopRoundTimer() {
     }
 }
 
-function createIsland(offsetX, offsetZ, spawnerType = null, size = 6) {
+function createIsland(offsetX, offsetZ, spawnerType = null, islandType = 'default') {
+    const size = islandType === 'emerald' ? 8 : 6;
+    
     for (let x = 0; x < size; x++) {
         for (let z = 0; z < size; z++) {
             addBlock(offsetX + x, 0, offsetZ + z, 'Grass');
         }
     }
+    
+    // Add rocks to emerald island
+    if (islandType === 'emerald') {
+        // Create a circular pattern of stone rocks
+        const rockPositions = [
+            {x: 2, z: 2}, {x: 5, z: 2},
+            {x: 2, z: 5}, {x: 5, z: 5},
+            {x: 1, z: 3}, {x: 3, z: 1},
+            {x: 4, z: 6}, {x: 6, z: 4}
+        ];
+        
+        rockPositions.forEach(pos => {
+            // Add 1-3 high rock formations
+            const height = Math.floor(Math.random() * 3) + 1;
+            for (let y = 1; y <= height; y++) {
+                addBlock(offsetX + pos.x, y, offsetZ + pos.z, 'Stone');
+            }
+        });
+    }
+    
     if (spawnerType) {
-        const center = (size - 1) / 2;
         const s = {
-            x: offsetX + center, y: 1, z: offsetZ + center,
+            x: offsetX + (size / 2) + 0.5, 
+            y: 1, 
+            z: offsetZ + (size / 2) + 0.5,
             resourceType: spawnerType.type,
             interval: spawnerType.interval * 1000,
             lastSpawn: Date.now()
@@ -223,8 +246,9 @@ function initWorld() {
         createIsland(island.offsetX, island.offsetZ, { type: 'gold', interval: 8 });
     });
     
-    // Emerald island is now 8x8
-    createIsland(emeraldIsland.offsetX, emeraldIsland.offsetZ, { type: 'emerald', interval: 10 }, 8);
+    // Create emerald island with rocks
+    createIsland(emeraldIsland.offsetX, emeraldIsland.offsetZ, 
+                 { type: 'emerald', interval: 10 }, 'emerald');
     
     occupiedIronIslands = [];
 }
@@ -298,7 +322,7 @@ function eliminatePlayer(playerId, eliminatorId) {
     
     p.spectator = true;
     p.health = PLAYER_MAX_HEALTH;
-    p.pos = { x: emeraldIsland.offsetX + 3.5, y: 50, z: emeraldIsland.offsetZ + 3.5 };
+    p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
     
     if (p.bedPos) {
         for (let i = 0; i < ironIslands.length; i++) {
@@ -353,7 +377,7 @@ function resetGame() {
         p.bedPos = null;
         p.spectator = true;
         p.health = PLAYER_MAX_HEALTH;
-        p.pos = { x: emeraldIsland.offsetX + 3.5, y: 50, z: emeraldIsland.offsetZ + 3.5 };
+        p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
         p.equippedItem = null;
         p.lastEnderpearlThrow = 0;
         p.lastFireballThrow = 0;
@@ -570,7 +594,7 @@ io.on('connection', (socket) => {
     console.log(`New connection: ${socket.id}`);
     
     const playerState = {
-        pos: { x: emeraldIsland.offsetX + 3.5, y: 50, z: emeraldIsland.offsetZ + 3.5 },
+        pos: { x: 9 + 2.5, y: 50, z: 9 + 2.5 },
         rot: { yaw: 0, pitch: 0 },
         crouch: false,
         inventory: new Array(INVENTORY_SIZE).fill(null),
@@ -650,7 +674,9 @@ io.on('connection', (socket) => {
             p.crouch = data.crouch;
             p.selected = data.selected;
             p.spectator = data.spectator;
-            p.equippedItem = data.equippedWeapon; // Update equipped item from client
+            
+            // Update equipped item (any item, not just weapons/tools)
+            p.equippedItem = data.equippedItem;
         }
     });
 
@@ -741,9 +767,8 @@ io.on('connection', (socket) => {
         slot.count--;
         if (slot.count === 0) {
             p.inventory[p.selected] = null;
-            if (BLOCK_TYPES[type] && (BLOCK_TYPES[type].isWeapon || BLOCK_TYPES[type].isTool) && p.selected === p.selected) {
-                p.equippedItem = null;
-            }
+            // Update equippedItem when slot becomes empty
+            p.equippedItem = null;
         }
         addBlock(x, y, z, type);
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
@@ -760,10 +785,7 @@ io.on('connection', (socket) => {
         
         if (slot.count <= 0) {
             p.inventory[p.selected] = null;
-            
-            if (BLOCK_TYPES[slot.type] && (BLOCK_TYPES[slot.type].isWeapon || BLOCK_TYPES[slot.type].isTool)) {
-                p.equippedItem = null;
-            }
+            p.equippedItem = null;
         }
         
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
@@ -800,11 +822,10 @@ io.on('connection', (socket) => {
         socket.emit('updateCurrency', { ...p.currency });
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
         
-        if ((data.isWeapon || data.isTool) && p.selected !== null) {
-            const slot = p.inventory[p.selected];
-            if (slot && slot.type === btype) {
-                p.equippedItem = btype;
-            }
+        // Update equipped item if it's in the selected slot
+        const slot = p.inventory[p.selected];
+        if (slot && slot.type === btype) {
+            p.equippedItem = btype;
         }
     });
 
@@ -900,6 +921,7 @@ io.on('connection', (socket) => {
         slot.count--;
         if (slot.count === 0) {
             p.inventory[p.selected] = null;
+            p.equippedItem = null;
         }
         
         p.lastEnderpearlThrow = now;
@@ -970,6 +992,7 @@ io.on('connection', (socket) => {
         slot.count--;
         if (slot.count === 0) {
             p.inventory[p.selected] = null;
+            p.equippedItem = null;
         }
         
         p.lastFireballThrow = now;
@@ -1040,6 +1063,7 @@ io.on('connection', (socket) => {
         slot.count--;
         if (slot.count === 0) {
             p.inventory[p.selected] = null;
+            p.equippedItem = null;
         }
         
         p.lastWindchargeThrow = now;
