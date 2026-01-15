@@ -1282,8 +1282,8 @@
                 if (itemData.isWeapon || itemData.isTool) {
                     weaponToolInHand = createWeaponToolMesh(currentSlot.type);
                     if (weaponToolInHand) {
-                        // Attach to camera for first-person view
-                        weaponToolInHand.position.set(0.3, -0.3, -0.5);
+                        // Attach to camera for first-person view - LEFT HAND position
+                        weaponToolInHand.position.set(-0.3, -0.3, -0.5);
                         camera.add(weaponToolInHand);
                     }
                 }
@@ -2321,11 +2321,21 @@
                     data.healthBar.style.backgroundColor = health > 5 ? '#4CAF50' : health > 2 ? '#FFA500' : '#FF0000';
                 }
                 
-                // Update other players' weapon display
+                // Update other players' weapon display - LEFT HAND
                 if (playerSwords.has(id)) {
-                    const sword = playerSwords.get(id);
-                    sword.lookAt(camera.position);
-                    sword.rotation.z = Math.PI / 4;
+                    const swordGroup = playerSwords.get(id);
+                    const weapon = swordGroup.children[0];
+                    
+                    // Make the weapon look at the camera but maintain its left hand position
+                    weapon.lookAt(camera.position);
+                    
+                    // Add slight bobbing animation for other players' weapons
+                    const bobTime = Date.now() / 200;
+                    const bobAmount = Math.sin(bobTime) * 0.02;
+                    if (data.leftArm) {
+                        swordGroup.position.copy(data.leftArm.position);
+                        swordGroup.position.y += bobAmount;
+                    }
                 }
             });
 
@@ -2548,8 +2558,11 @@
 
             const armGeo = new THREE.BoxGeometry(0.25, 0.8, 0.25);
             const armMat = bodyMat;
+            
+            // LEFT ARM (for weapon attachment)
             const leftArm = new THREE.Mesh(armGeo, armMat);
             leftArm.position.set(0.5, 0.7, 0);
+            leftArm.name = 'leftArm';
             group.add(leftArm);
 
             const rightArm = new THREE.Mesh(armGeo, armMat);
@@ -2594,6 +2607,7 @@
             otherPlayers.set(id, {
                 group,
                 head,
+                leftArm, // Store reference to left arm
                 targetPos: { x: 0, y: 0, z: 0 },
                 targetRot: { yaw: 0, pitch: 0 },
                 targetCrouch: false,
@@ -2640,16 +2654,32 @@
             const material = new THREE.SpriteMaterial({ 
                 map: texture,
                 transparent: true,
-                opacity: 0.9
+                opacity: 0.9,
+                depthTest: false
             });
             
             const weapon = new THREE.Sprite(material);
             weapon.scale.set(0.5, 0.5, 1);
-            weapon.position.set(-0.3, 0.8, 0); // Position in right hand
-            weapon.userData = { type: 'weapon', playerId: id, weaponType: weaponType };
             
-            op.group.add(weapon);
-            playerSwords.set(id, weapon);
+            // Create a group for the weapon relative to the left arm
+            const weaponGroup = new THREE.Group();
+            weapon.position.set(0.2, 0.2, 0); // Offset from the arm
+            weaponGroup.add(weapon);
+            
+            // Attach to the left arm mesh if it exists
+            if (op.leftArm) {
+                weaponGroup.position.copy(op.leftArm.position);
+            } else {
+                // Fallback position if left arm not found
+                weaponGroup.position.set(0.3, 0.8, 0); // Left hand position
+            }
+            
+            // Adjust rotation for left hand
+            weaponGroup.rotation.y = Math.PI; // Face forward
+            weapon.rotation.z = Math.PI / 4; // Angled grip
+            
+            op.group.add(weaponGroup);
+            playerSwords.set(id, weaponGroup);
         }
 
         function updatePlayerHealth(id, health) {
