@@ -2331,14 +2331,15 @@
                     // Add subtle bobbing animation when player is moving
                     const isMoving = data.group.position.distanceTo(data.lastPos || data.group.position) > 0.01;
                     if (isMoving) {
-                        // Bobbing animation
+                        // Bobbing animation - CHANGED: Use hand position (0.3) as base
                         const bobOffset = Math.sin(time * 0.01) * 0.05;
-                        item.position.y = 0.8 + bobOffset;
+                        item.position.y = 0.3 + bobOffset;
                         
-                        // Slight rotation
+                        // Slight rotation for swinging effect when moving
                         item.rotation.z = Math.PI / 4 + Math.sin(time * 0.005) * 0.1;
                     } else {
-                        item.position.y = 0.8;
+                        // CHANGED: Position in right hand
+                        item.position.y = 0.3;
                         item.rotation.z = Math.PI / 4;
                     }
                     
@@ -2684,7 +2685,10 @@
                     });
                     const item = new THREE.Sprite(material);
                     item.scale.set(0.4, 0.4, 1);
-                    item.position.set(-0.3, 0.8, 0);
+                    // CHANGED: Position in right hand instead of torso
+                    // Right arm is at position (-0.5, 0.7, 0) with height 0.8
+                    // Hand is at the end of the arm (y = 0.7 - 0.4 = 0.3)
+                    item.position.set(-0.5, 0.3, 0);
                     item.userData = { type: 'item', playerId: id, itemType: itemType };
                     
                     op.group.add(item);
@@ -2701,7 +2705,8 @@
             
             const item = new THREE.Sprite(material);
             item.scale.set(0.4, 0.4, 1);
-            item.position.set(-0.3, 0.8, 0); // Position in right hand
+            // CHANGED: Position in right hand instead of torso
+            item.position.set(-0.5, 0.3, 0);
             item.userData = { type: 'item', playerId: id, itemType: itemType };
             
             op.group.add(item);
