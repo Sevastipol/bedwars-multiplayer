@@ -24,8 +24,8 @@ const BLOCK_TYPES = {
     'Enderpearl': { color: 0x00ff88, cost: { emerald: 2 }, buyAmount: 1, isItem: true, hasTexture: true },
     'Fireball': { color: 0xff5500, cost: { iron: 48 }, buyAmount: 1, isItem: true, hasTexture: true },
     'Wind Charge': { color: 0x88ccff, cost: { gold: 10 }, buyAmount: 1, isItem: true, hasTexture: true },
-    'Wooden Sword': { color: 0x8B4513, cost: { iron: 20 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 2, hasTexture: true },
-    'Iron Sword': { color: 0xC0C0C0, cost: { gold: 10 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 3, hasTexture: true },
+    'Wooden Sword': { color: 0x8B4513, cost: { iron: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 2, hasTexture: true },
+    'Iron Sword': { color: 0xC0C0C0, cost: { gold: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 3, hasTexture: true },
     'Emerald Sword': { color: 0x00FF00, cost: { emerald: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 4, hasTexture: true },
     'Axe': { color: 0x8B4513, cost: { gold: 5 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'axe', breakMultiplier: 0.333, hasTexture: true },
     'Pickaxe': { color: 0xC0C0C0, cost: { gold: 5 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'pickaxe', breakMultiplier: 0.333, hasTexture: true }
@@ -68,7 +68,7 @@ const goldIslands = [
     {offsetX: 9, offsetZ: 33, spawnerX: 11.5, spawnerY: 1, spawnerZ: 35.5}
 ];
 
-// Emerald island position
+// Emerald island position - Updated to 8x8
 const emeraldIsland = {offsetX: 8, offsetZ: 8, spawnerX: 11.5, spawnerY: 1, spawnerZ: 11.5};
 
 let occupiedIronIslands = [];
@@ -105,22 +105,6 @@ function removeBlock(x, y, z) {
         });
     }
     return true;
-}
-
-// NEW: Check if position is adjacent to any existing block (Minecraft Bedrock requirement)
-function isAdjacentToBlock(x, y, z) {
-    const directions = [
-        [1, 0, 0], [-1, 0, 0],
-        [0, 1, 0], [0, -1, 0],
-        [0, 0, 1], [0, 0, -1]
-    ];
-    
-    for (const [dx, dy, dz] of directions) {
-        if (blocks.has(blockKey(x + dx, y + dy, z + dz))) {
-            return true;
-        }
-    }
-    return false;
 }
 
 function spawnPickup(x, y, z, resourceType) {
@@ -213,7 +197,9 @@ function createIsland(offsetX, offsetZ, spawnerType = null, islandType = 'defaul
         }
     }
     
+    // Add rocks to emerald island
     if (islandType === 'emerald') {
+        // Create a circular pattern of stone rocks
         const rockPositions = [
             {x: 2, z: 2}, {x: 5, z: 2},
             {x: 2, z: 5}, {x: 5, z: 5},
@@ -222,6 +208,7 @@ function createIsland(offsetX, offsetZ, spawnerType = null, islandType = 'defaul
         ];
         
         rockPositions.forEach(pos => {
+            // Add 1-3 high rock formations
             const height = Math.floor(Math.random() * 3) + 1;
             for (let y = 1; y <= height; y++) {
                 addBlock(offsetX + pos.x, y, offsetZ + pos.z, 'Stone');
@@ -259,6 +246,7 @@ function initWorld() {
         createIsland(island.offsetX, island.offsetZ, { type: 'gold', interval: 8 });
     });
     
+    // Create emerald island with rocks
     createIsland(emeraldIsland.offsetX, emeraldIsland.offsetZ, 
                  { type: 'emerald', interval: 10 }, 'emerald');
     
@@ -686,6 +674,8 @@ io.on('connection', (socket) => {
             p.crouch = data.crouch;
             p.selected = data.selected;
             p.spectator = data.spectator;
+            
+            // Update equipped item (any item, not just weapons/tools)
             p.equippedItem = data.equippedItem;
         }
     });
@@ -774,16 +764,10 @@ io.on('connection', (socket) => {
             return;
         }
         
-        // NEW: Minecraft Bedrock requirement - block must be adjacent to an existing block
-        if (!isAdjacentToBlock(x, y, z)) {
-            socket.emit('revertPlace', { x, y, z });
-            socket.emit('notification', 'Block must be placed adjacent to another block!');
-            return;
-        }
-        
         slot.count--;
         if (slot.count === 0) {
             p.inventory[p.selected] = null;
+            // Update equippedItem when slot becomes empty
             p.equippedItem = null;
         }
         addBlock(x, y, z, type);
@@ -838,6 +822,7 @@ io.on('connection', (socket) => {
         socket.emit('updateCurrency', { ...p.currency });
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
         
+        // Update equipped item if it's in the selected slot
         const slot = p.inventory[p.selected];
         if (slot && slot.type === btype) {
             p.equippedItem = btype;
@@ -1821,6 +1806,7 @@ setInterval(() => {
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
                     io.to(id).emit('notification', 'You fell into the void and respawned at your bed!');
                     
+                    // Update other players about the health restoration
                     io.emit('playerHit', {
                         attackerId: null,
                         targetId: id,
