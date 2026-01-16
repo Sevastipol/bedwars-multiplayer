@@ -2325,22 +2325,40 @@
                 if (playerItems.has(id)) {
                     const item = playerItems.get(id);
                     
-                    // Make item face the camera
-                    item.lookAt(camera.position);
+                    // Make item face the camera (for sprites only, not cubes)
+                    if (item.isSprite) {
+                        item.lookAt(camera.position);
+                    }
                     
                     // Add subtle bobbing animation when player is moving
                     const isMoving = data.group.position.distanceTo(data.lastPos || data.group.position) > 0.01;
                     if (isMoving) {
-                        // Bobbing animation - CHANGED: Use hand position (0.3) as base
+                        // Bobbing animation
                         const bobOffset = Math.sin(time * 0.01) * 0.05;
-                        item.position.y = 0.3 + bobOffset;
                         
-                        // Slight rotation for swinging effect when moving
-                        item.rotation.z = Math.PI / 4 + Math.sin(time * 0.005) * 0.1;
+                        if (item.isSprite) {
+                            // For sprites (weapons, tools, throwables)
+                            item.position.y = 0.3 + bobOffset;
+                            item.rotation.z = Math.PI / 4 + Math.sin(time * 0.005) * 0.1;
+                        } else {
+                            // For cubes (blocks)
+                            item.position.y = 0.35 + bobOffset;
+                            // Add slight rotation to cubes when moving
+                            item.rotation.y += delta * 2;
+                            item.rotation.x = Math.sin(time * 0.01) * 0.1;
+                        }
                     } else {
-                        // CHANGED: Position in right hand
-                        item.position.y = 0.3;
-                        item.rotation.z = Math.PI / 4;
+                        if (item.isSprite) {
+                            // For sprites
+                            item.position.y = 0.3;
+                            item.rotation.z = Math.PI / 4;
+                        } else {
+                            // For cubes
+                            item.position.y = 0.35;
+                            // Reset rotation when not moving
+                            item.rotation.y = 0;
+                            item.rotation.x = 0;
+                        }
                     }
                     
                     // Store last position for movement detection
@@ -2351,8 +2369,10 @@
                     if (userData && (userData.itemType === 'Enderpearl' || 
                                     userData.itemType === 'Fireball' || 
                                     userData.itemType === 'Wind Charge')) {
-                        item.material.rotation += 0.05;
-                        item.material.needsUpdate = true;
+                        if (item.material) {
+                            item.material.rotation += 0.05;
+                            item.material.needsUpdate = true;
+                        }
                     }
                 }
             });
@@ -2674,43 +2694,89 @@
             else if (itemType === 'Stone') texture = stoneTexture;
             else if (itemType === 'Obsidian') texture = obsidianTexture;
             
-            if (!texture) {
-                // For items without specific textures, create colored sprite
-                const blockData = BLOCK_TYPES[itemType];
-                if (blockData) {
-                    const material = new THREE.SpriteMaterial({ 
-                        color: blockData.color,
-                        transparent: true,
-                        opacity: itemType === 'Glass' ? 0.8 : 0.9
+            // Check if this is a block (not a weapon, tool, or throwable item)
+            const blockData = BLOCK_TYPES[itemType];
+            const isBlock = blockData && !blockData.isWeapon && !blockData.isTool && !blockData.isItem;
+            
+            if (isBlock) {
+                // Create a cube for blocks
+                let material;
+                if (itemType === 'Grass' && grassTexture) {
+                    material = new THREE.MeshLambertMaterial({ map: grassTexture });
+                } else if (itemType === 'Wood' && woodTexture) {
+                    material = new THREE.MeshLambertMaterial({ map: woodTexture });
+                } else if (itemType === 'Stone' && stoneTexture) {
+                    material = new THREE.MeshLambertMaterial({ map: stoneTexture });
+                } else if (itemType === 'Obsidian' && obsidianTexture) {
+                    material = new THREE.MeshLambertMaterial({ map: obsidianTexture });
+                } else if (itemType === 'Glass') {
+                    material = new THREE.MeshLambertMaterial({ 
+                        color: blockData.color, 
+                        transparent: true, 
+                        opacity: 0.6 
                     });
-                    const item = new THREE.Sprite(material);
-                    item.scale.set(0.4, 0.4, 1);
-                    // CHANGED: Position in right hand instead of torso
-                    // Right arm is at position (-0.5, 0.7, 0) with height 0.8
-                    // Hand is at the end of the arm (y = 0.7 - 0.4 = 0.3)
-                    item.position.set(-0.5, 0.3, 0);
-                    item.userData = { type: 'item', playerId: id, itemType: itemType };
-                    
-                    op.group.add(item);
-                    playerItems.set(id, item);
+                } else {
+                    material = new THREE.MeshLambertMaterial({ 
+                        color: blockData.color, 
+                        transparent: !!blockData.opacity, 
+                        opacity: blockData.opacity || 1 
+                    });
                 }
-                return;
+                
+                const cube = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), material);
+                // CHANGED: Position in right hand
+                cube.position.set(-0.5, 0.35, 0);
+                cube.userData = { 
+                    type: 'item', 
+                    playerId: id, 
+                    itemType: itemType 
+                };
+                cube.isSprite = false; // Mark as not a sprite
+                
+                op.group.add(cube);
+                playerItems.set(id, cube);
+            } else if (texture) {
+                // Create sprite for weapons, tools, and throwable items
+                const material = new THREE.SpriteMaterial({ 
+                    map: texture,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                
+                const item = new THREE.Sprite(material);
+                item.scale.set(0.4, 0.4, 1);
+                // CHANGED: Position in right hand
+                item.position.set(-0.5, 0.3, 0);
+                item.userData = { 
+                    type: 'item', 
+                    playerId: id, 
+                    itemType: itemType 
+                };
+                item.isSprite = true; // Mark as sprite
+                
+                op.group.add(item);
+                playerItems.set(id, item);
+            } else if (blockData) {
+                // Fallback: colored sprite for items without specific textures
+                const material = new THREE.SpriteMaterial({ 
+                    color: blockData.color,
+                    transparent: true,
+                    opacity: itemType === 'Glass' ? 0.8 : 0.9
+                });
+                const item = new THREE.Sprite(material);
+                item.scale.set(0.4, 0.4, 1);
+                // CHANGED: Position in right hand
+                item.position.set(-0.5, 0.3, 0);
+                item.userData = { 
+                    type: 'item', 
+                    playerId: id, 
+                    itemType: itemType 
+                };
+                item.isSprite = true; // Mark as sprite
+                
+                op.group.add(item);
+                playerItems.set(id, item);
             }
-            
-            const material = new THREE.SpriteMaterial({ 
-                map: texture,
-                transparent: true,
-                opacity: 0.9
-            });
-            
-            const item = new THREE.Sprite(material);
-            item.scale.set(0.4, 0.4, 1);
-            // CHANGED: Position in right hand instead of torso
-            item.position.set(-0.5, 0.3, 0);
-            item.userData = { type: 'item', playerId: id, itemType: itemType };
-            
-            op.group.add(item);
-            playerItems.set(id, item);
         }
 
         function updatePlayerHealth(id, health) {
