@@ -68,7 +68,7 @@ const goldIslands = [
     {offsetX: 9, offsetZ: 33, spawnerX: 11.5, spawnerY: 1, spawnerZ: 35.5}
 ];
 
-// Emerald island position - Updated to 8x8
+// Emerald island position
 const emeraldIsland = {offsetX: 8, offsetZ: 8, spawnerX: 11.5, spawnerY: 1, spawnerZ: 11.5};
 
 let occupiedIronIslands = [];
@@ -105,6 +105,22 @@ function removeBlock(x, y, z) {
         });
     }
     return true;
+}
+
+// NEW: Check if position is adjacent to any existing block (Minecraft Bedrock requirement)
+function isAdjacentToBlock(x, y, z) {
+    const directions = [
+        [1, 0, 0], [-1, 0, 0],
+        [0, 1, 0], [0, -1, 0],
+        [0, 0, 1], [0, 0, -1]
+    ];
+    
+    for (const [dx, dy, dz] of directions) {
+        if (blocks.has(blockKey(x + dx, y + dy, z + dz))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function spawnPickup(x, y, z, resourceType) {
@@ -197,9 +213,7 @@ function createIsland(offsetX, offsetZ, spawnerType = null, islandType = 'defaul
         }
     }
     
-    // Add rocks to emerald island
     if (islandType === 'emerald') {
-        // Create a circular pattern of stone rocks
         const rockPositions = [
             {x: 2, z: 2}, {x: 5, z: 2},
             {x: 2, z: 5}, {x: 5, z: 5},
@@ -208,7 +222,6 @@ function createIsland(offsetX, offsetZ, spawnerType = null, islandType = 'defaul
         ];
         
         rockPositions.forEach(pos => {
-            // Add 1-3 high rock formations
             const height = Math.floor(Math.random() * 3) + 1;
             for (let y = 1; y <= height; y++) {
                 addBlock(offsetX + pos.x, y, offsetZ + pos.z, 'Stone');
@@ -246,7 +259,6 @@ function initWorld() {
         createIsland(island.offsetX, island.offsetZ, { type: 'gold', interval: 8 });
     });
     
-    // Create emerald island with rocks
     createIsland(emeraldIsland.offsetX, emeraldIsland.offsetZ, 
                  { type: 'emerald', interval: 10 }, 'emerald');
     
@@ -674,8 +686,6 @@ io.on('connection', (socket) => {
             p.crouch = data.crouch;
             p.selected = data.selected;
             p.spectator = data.spectator;
-            
-            // Update equipped item (any item, not just weapons/tools)
             p.equippedItem = data.equippedItem;
         }
     });
@@ -748,50 +758,32 @@ io.on('connection', (socket) => {
             return;
         }
         
-        // Minecraft Bedrock-style distance check (allows placing in air up to 5.5 blocks away)
         const eyeHeight = p.crouch ? 1.3 : 1.6;
         const playerEyeY = p.pos.y;
-        const blockCenterX = x + 0.5;
         const blockCenterY = y + 0.5;
-        const blockCenterZ = z + 0.5;
         
-        // Calculate 3D distance from player's eyes to block center
-        const dx = p.pos.x - blockCenterX;
-        const dy = playerEyeY - blockCenterY;
-        const dz = p.pos.z - blockCenterZ;
-        const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        const dist = Math.hypot(
+            p.pos.x - (x + 0.5),
+            playerEyeY - blockCenterY,
+            p.pos.z - (z + 0.5)
+        );
         
-        // Allow placement up to 5.5 blocks away (like Minecraft Bedrock)
         if (dist > 5.5) {
             socket.emit('revertPlace', { x, y, z });
             socket.emit('notification', 'Too far away!');
             return;
         }
         
-        // Check if block would intersect with player
-        const playerHeight = p.crouch ? 1.8 : 2.3; // Total player height when crouching/standing
-        const playerFeetY = p.pos.y - eyeHeight;
-        const playerHeadY = playerFeetY + playerHeight;
-        const blockMinY = y;
-        const blockMaxY = y + 1;
-        
-        // If block overlaps with player vertically
-        if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
-            const dx = Math.abs(p.pos.x - blockCenterX);
-            const dz = Math.abs(p.pos.z - blockCenterZ);
-            
-            // Player collision radius (approximately)
-            if (dx < 0.4 && dz < 0.4) {
-                socket.emit('revertPlace', { x, y, z });
-                socket.emit('notification', 'Cannot place block inside yourself!');
-                return;
-            }
+        // NEW: Minecraft Bedrock requirement - block must be adjacent to an existing block
+        if (!isAdjacentToBlock(x, y, z)) {
+            socket.emit('revertPlace', { x, y, z });
+            socket.emit('notification', 'Block must be placed adjacent to another block!');
+            return;
         }
         
         slot.count--;
         if (slot.count === 0) {
             p.inventory[p.selected] = null;
-            // Update equippedItem when slot becomes empty
             p.equippedItem = null;
         }
         addBlock(x, y, z, type);
@@ -846,7 +838,6 @@ io.on('connection', (socket) => {
         socket.emit('updateCurrency', { ...p.currency });
         socket.emit('updateInventory', p.inventory.map(slot => slot ? { ...slot } : null));
         
-        // Update equipped item if it's in the selected slot
         const slot = p.inventory[p.selected];
         if (slot && slot.type === btype) {
             p.equippedItem = btype;
@@ -1830,7 +1821,6 @@ setInterval(() => {
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
                     io.to(id).emit('notification', 'You fell into the void and respawned at your bed!');
                     
-                    // Update other players about the health restoration
                     io.emit('playerHit', {
                         attackerId: null,
                         targetId: id,
