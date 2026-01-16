@@ -489,6 +489,177 @@
         let playerHealth = new Map();
         let playerItems = new Map();
 
+        // --- Minecraft Bedrock Building System ---
+        let placementIndicator = null;
+        let lastPlacementCheck = 0;
+        const PLACEMENT_CHECK_INTERVAL = 100; // ms
+
+        // Create placement indicator (semi-transparent block)
+        function createPlacementIndicator() {
+            const geometry = new THREE.BoxGeometry(1.01, 1.01, 1.01);
+            const material = new THREE.MeshBasicMaterial({
+                color: 0x00ff00,
+                transparent: true,
+                opacity: 0.5,
+                depthWrite: false
+            });
+            placementIndicator = new THREE.Mesh(geometry, material);
+            placementIndicator.visible = false;
+            scene.add(placementIndicator);
+        }
+
+        // Check if a position is adjacent to any existing block
+        function isAdjacentToBlock(x, y, z) {
+            // Check all 6 directions
+            const directions = [
+                [1, 0, 0], [-1, 0, 0],
+                [0, 1, 0], [0, -1, 0],
+                [0, 0, 1], [0, 0, -1]
+            ];
+            
+            for (const [dx, dy, dz] of directions) {
+                const neighborKey = `${x + dx},${y + dy},${z + dz}`;
+                if (blocksMeshes.has(neighborKey)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Find the best placement position based on raycast
+        function findPlacementPosition() {
+            if (isSpectator) return null;
+            
+            const currentSlot = inventory[selectedSlotIndex];
+            if (!currentSlot || currentSlot.count <= 0) return null;
+            
+            const blockData = BLOCK_TYPES[currentSlot.type];
+            if (blockData && (blockData.isItem || blockData.isWeapon || blockData.isTool)) {
+                return null;
+            }
+            
+            // Cast a ray from the camera
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = raycaster.intersectObjects(blocksInScene);
+            
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+                if (intersect.distance > 5) return null;
+                
+                // Get the face normal and add block in that direction
+                const normal = intersect.face.normal.clone();
+                const worldPos = intersect.point.clone().add(normal.multiplyScalar(0.5));
+                
+                const blockX = Math.floor(worldPos.x);
+                const blockY = Math.floor(worldPos.y);
+                const blockZ = Math.floor(worldPos.z);
+                
+                // Check if position is valid
+                if (isValidPlacementPosition(blockX, blockY, blockZ)) {
+                    return { x: blockX, y: blockY, z: blockZ };
+                }
+            } else {
+                // If no block is hit, try to find a position in front of the player
+                const direction = new THREE.Vector3(0, 0, -1);
+                direction.applyQuaternion(camera.quaternion);
+                direction.normalize();
+                
+                // Check multiple distances
+                for (let distance = 1; distance <= 5; distance += 1) {
+                    const targetPos = new THREE.Vector3(
+                        camera.position.x + direction.x * distance,
+                        camera.position.y + direction.y * distance,
+                        camera.position.z + direction.z * distance
+                    );
+                    
+                    const blockX = Math.floor(targetPos.x);
+                    const blockY = Math.floor(targetPos.y);
+                    const blockZ = Math.floor(targetPos.z);
+                    
+                    // Check if this position is adjacent to an existing block
+                    if (isAdjacentToBlock(blockX, blockY, blockZ) && 
+                        isValidPlacementPosition(blockX, blockY, blockZ)) {
+                        return { x: blockX, y: blockY, z: blockZ };
+                    }
+                }
+            }
+            
+            return null;
+        }
+
+        // Check if placement position is valid (not occupied, not inside player)
+        function isValidPlacementPosition(x, y, z) {
+            // Check if block already exists
+            const key = `${x},${y},${z}`;
+            if (blocksMeshes.has(key)) return false;
+            
+            // Check if block is adjacent to another block (Minecraft Bedrock requirement)
+            if (!isAdjacentToBlock(x, y, z)) return false;
+            
+            // Check if block is too far
+            const dist = Math.hypot(
+                camera.position.x - (x + 0.5),
+                camera.position.y - (y + 0.5),
+                camera.position.z - (z + 0.5)
+            );
+            if (dist > 5) return false;
+            
+            // Check if block would intersect with player
+            const currentEyeHeight = isCrouching ? 1.3 : 1.6;
+            const currentPlayerHeight = isCrouching ? 1.8 - 0.5 : 1.8;
+            
+            const playerFeetY = camera.position.y - currentEyeHeight;
+            const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
+            const blockMinY = y;
+            const blockMaxY = y + 1;
+            
+            if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
+                const dx = Math.abs(camera.position.x - (x + 0.5));
+                const dz = Math.abs(camera.position.z - (z + 0.5));
+                if (dx < 0.4 && dz < 0.4) {
+                    return false;
+                }
+            }
+            
+            return true;
+        }
+
+        // Update placement indicator
+        function updatePlacementIndicator() {
+            const now = Date.now();
+            if (now - lastPlacementCheck < PLACEMENT_CHECK_INTERVAL) return;
+            lastPlacementCheck = now;
+            
+            const currentSlot = inventory[selectedSlotIndex];
+            if (!currentSlot || currentSlot.count <= 0 || isSpectator) {
+                if (placementIndicator) placementIndicator.visible = false;
+                return;
+            }
+            
+            const blockData = BLOCK_TYPES[currentSlot.type];
+            if (blockData && (blockData.isItem || blockData.isWeapon || blockData.isTool)) {
+                if (placementIndicator) placementIndicator.visible = false;
+                return;
+            }
+            
+            const pos = findPlacementPosition();
+            if (pos && placementIndicator) {
+                placementIndicator.position.set(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5);
+                placementIndicator.visible = true;
+                
+                // Change color based on validity
+                if (isValidPlacementPosition(pos.x, pos.y, pos.z)) {
+                    placementIndicator.material.color.setHex(0x00ff00);
+                    placementIndicator.material.opacity = 0.5;
+                } else {
+                    placementIndicator.material.color.setHex(0xff0000);
+                    placementIndicator.material.opacity = 0.3;
+                }
+            } else if (placementIndicator) {
+                placementIndicator.visible = false;
+            }
+        }
+
         // --- Fullscreen Functions ---
         function enterFullscreen() {
             const elem = document.documentElement;
@@ -589,6 +760,11 @@
                 
                 // Remove weapon/tool from hand
                 removeWeaponToolFromHand();
+                
+                // Hide placement indicator
+                if (placementIndicator) {
+                    placementIndicator.visible = false;
+                }
                 
                 if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
                     setTimeout(() => {
@@ -831,6 +1007,9 @@
             blocksInScene.push(voxel);
             const key = `${x},${y},${z}`;
             blocksMeshes.set(key, voxel);
+            
+            // Update placement indicator if needed
+            updatePlacementIndicator();
             return voxel;
         }
 
@@ -842,6 +1021,9 @@
                 const idx = blocksInScene.indexOf(mesh);
                 if (idx > -1) blocksInScene.splice(idx, 1);
                 blocksMeshes.delete(key);
+                
+                // Update placement indicator if needed
+                updatePlacementIndicator();
             }
         }
 
@@ -1006,7 +1188,7 @@
             
             const windcharge = new THREE.Sprite(material);
             windcharge.position.set(data.x, data.y, data.z);
-            windcharge.scale.set(0.4, 0.4, 1); // Smaller size like Minecraft
+            windcharge.scale.set(0.4, 0.4, 1);
             
             windcharge.userData = { 
                 id: data.id, 
@@ -1061,22 +1243,20 @@
             }
         }
 
-        // Wind Charge explosion effect - Minecraft style
+        // Wind Charge explosion effect
         function createWindchargeEffect(x, y, z) {
-            // Main explosion particles
             const particleCount = 30;
             const explosionGroup = new THREE.Group();
             
             for (let i = 0; i < particleCount; i++) {
                 const geometry = new THREE.SphereGeometry(0.08, 6, 6);
                 const material = new THREE.MeshBasicMaterial({ 
-                    color: 0xaaddff, // Lighter blue color
+                    color: 0xaaddff,
                     transparent: true,
                     opacity: 0.9
                 });
                 const particle = new THREE.Mesh(geometry, material);
                 
-                // Random direction in all directions
                 const theta = Math.random() * Math.PI * 2;
                 const phi = Math.random() * Math.PI;
                 const speed = 1.5 + Math.random() * 2;
@@ -1093,7 +1273,6 @@
                 explosionGroup.add(particle);
             }
             
-            // Add small wind lines/circles
             const circleCount = 8;
             for (let i = 0; i < circleCount; i++) {
                 const radius = 0.1 + Math.random() * 0.2;
@@ -1116,7 +1295,7 @@
                     z + 0.5 + Math.sin(angle) * distance
                 );
                 
-                circle.rotation.x = Math.PI / 2; // Make it horizontal
+                circle.rotation.x = Math.PI / 2;
                 
                 circle.userData = {
                     life: 1.0,
@@ -1141,7 +1320,6 @@
                     if (object.userData.life > 0) {
                         allDead = false;
                         
-                        // Handle particles
                         if (object.userData.velocity) {
                             object.position.x += object.userData.velocity.x * 0.1;
                             object.position.y += object.userData.velocity.y * 0.1;
@@ -1149,13 +1327,10 @@
                             object.material.opacity = object.userData.life;
                             object.scale.setScalar(object.userData.life * 0.5);
                         }
-                        // Handle wind circles
                         else {
                             object.userData.scale += object.userData.expandSpeed * 0.1;
                             object.scale.setScalar(object.userData.scale);
                             object.material.opacity = object.userData.life;
-                            
-                            // Move upward slightly
                             object.position.y += 0.02;
                         }
                     }
@@ -1270,7 +1445,6 @@
         }
 
         function updateEquipmentInHand() {
-            // Remove existing equipment
             removeWeaponToolFromHand();
             
             if (isSpectator) return;
@@ -1282,7 +1456,6 @@
                 if (itemData.isWeapon || itemData.isTool) {
                     weaponToolInHand = createWeaponToolMesh(currentSlot.type);
                     if (weaponToolInHand) {
-                        // Attach to camera for first-person view
                         weaponToolInHand.position.set(0.3, -0.3, -0.5);
                         camera.add(weaponToolInHand);
                     }
@@ -1536,13 +1709,11 @@
             if (currentItem && BLOCK_TYPES[currentItem.type]?.isTool) {
                 const tool = BLOCK_TYPES[currentItem.type];
                 
-                // Axe breaks glass and wood faster
                 if (tool.toolType === 'axe') {
                     if (blockType === 'Glass' || blockType === 'Wood') {
                         return baseBreakTime * tool.breakMultiplier;
                     }
                 }
-                // Pickaxe breaks stone and obsidian faster
                 else if (tool.toolType === 'pickaxe') {
                     if (blockType === 'Stone' || blockType === 'Obsidian') {
                         return baseBreakTime * tool.breakMultiplier;
@@ -1706,7 +1877,6 @@
                         breakingBlock = obj;
                         breakingStartTime = Date.now();
                         
-                        // Calculate break time with tool multiplier
                         const currentSlot = inventory[selectedSlotIndex];
                         const breakTimeMultiplier = calculateBreakTime(type, currentSlot);
                         breakingDuration = breakTimeMultiplier * 1000;
@@ -1740,8 +1910,10 @@
                     }
                 }
             } else if (e.button === 2) {
+                // NEW: Minecraft Bedrock building system
                 const currentSlot = inventory[selectedSlotIndex];
                 
+                // Check for throwable items first
                 if (currentSlot && currentSlot.type === 'Enderpearl' && currentSlot.count > 0) {
                     const now = Date.now();
                     if (now - lastEnderpearlThrow < 1000) {
@@ -1811,39 +1983,31 @@
                     return;
                 }
                 
-                // ===== MINECRAFT BEDROCK-STYLE BUILDING MECHANIC =====
+                // Regular block placement
                 if (currentSlot && currentSlot.count > 0) {
-                    // Check if item can be placed
                     const blockData = BLOCK_TYPES[currentSlot.type];
                     if (blockData && (blockData.isItem || blockData.isWeapon || blockData.isTool)) {
                         socket.emit('notification', 'Cannot place items! Use Q to drop them.');
                         return;
                     }
                     
-                    const blockIntersects = raycaster.intersectObjects(blocksInScene);
-                    
-                    if (blockIntersects.length > 0) {
-                        // Place block on face of existing block (classic Minecraft)
-                        const intersect = blockIntersects[0];
-                        if (intersect.distance > 5) {
-                            socket.emit('notification', 'Too far away!');
-                            return;
-                        }
+                    // Find placement position using the new system
+                    const pos = findPlacementPosition();
+                    if (pos) {
+                        const blockX = pos.x;
+                        const blockY = pos.y;
+                        const blockZ = pos.z;
                         
-                        const pos = intersect.point.clone().add(intersect.face.normal.multiplyScalar(0.5));
-                        const blockX = Math.floor(pos.x);
-                        const blockY = Math.floor(pos.y);
-                        const blockZ = Math.floor(pos.z);
-                        
-                        // Check collision with player
+                        // Check player collision
+                        let canPlace = true;
                         const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
                         const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
+                        
                         const playerFeetY = camera.position.y - currentEyeHeight;
                         const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
                         const blockMinY = blockY;
                         const blockMaxY = blockY + 1;
                         
-                        let canPlace = true;
                         if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
                             const dx = Math.abs(camera.position.x - (blockX + 0.5));
                             const dz = Math.abs(camera.position.z - (blockZ + 0.5));
@@ -1857,76 +2021,7 @@
                             socket.emit('placeAttempt', { x: blockX, y: blockY, z: blockZ, type });
                         }
                     } else {
-                        // Minecraft Bedrock style: place block in air where player is looking
-                        // Place block at fixed distance (5 blocks) in front of player
-                        const direction = new THREE.Vector3(0, 0, -1);
-                        direction.applyQuaternion(camera.quaternion);
-                        direction.normalize();
-                        
-                        // Start checking from 2 blocks away to 5 blocks away
-                        for (let distance = 2; distance <= 5; distance += 1) {
-                            const checkPos = camera.position.clone().add(direction.clone().multiplyScalar(distance));
-                            const blockX = Math.floor(checkPos.x);
-                            const blockY = Math.floor(checkPos.y);
-                            const blockZ = Math.floor(checkPos.z);
-                            
-                            // Check if position is empty
-                            const key = `${blockX},${blockY},${blockZ}`;
-                            if (!blocksMeshes.has(key)) {
-                                // Check collision with player
-                                const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
-                                const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
-                                const playerFeetY = camera.position.y - currentEyeHeight;
-                                const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
-                                const blockMinY = blockY;
-                                const blockMaxY = blockY + 1;
-                                
-                                let canPlace = true;
-                                if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
-                                    const dx = Math.abs(camera.position.x - (blockX + 0.5));
-                                    const dz = Math.abs(camera.position.z - (blockZ + 0.5));
-                                    if (dx < PLAYER_RADIUS * 0.6 && dz < PLAYER_RADIUS * 0.6) {
-                                        canPlace = false;
-                                    }
-                                }
-                                
-                                if (canPlace) {
-                                    const type = currentSlot.type;
-                                    socket.emit('placeAttempt', { x: blockX, y: blockY, z: blockZ, type });
-                                    return;
-                                }
-                            }
-                        }
-                        
-                        // If no suitable position found within 2-5 blocks, try at exactly 5 blocks
-                        const targetPos = camera.position.clone().add(direction.clone().multiplyScalar(5));
-                        const blockX = Math.floor(targetPos.x);
-                        const blockY = Math.floor(targetPos.y);
-                        const blockZ = Math.floor(targetPos.z);
-                        
-                        // Final collision check
-                        const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
-                        const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
-                        const playerFeetY = camera.position.y - currentEyeHeight;
-                        const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
-                        const blockMinY = blockY;
-                        const blockMaxY = blockY + 1;
-                        
-                        let canPlace = true;
-                        if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
-                            const dx = Math.abs(camera.position.x - (blockX + 0.5));
-                            const dz = Math.abs(camera.position.z - (blockZ + 0.5));
-                            if (dx < PLAYER_RADIUS * 0.6 && dz < PLAYER_RADIUS * 0.6) {
-                                canPlace = false;
-                            }
-                        }
-                        
-                        if (canPlace) {
-                            const type = currentSlot.type;
-                            socket.emit('placeAttempt', { x: blockX, y: blockY, z: blockZ, type });
-                        } else {
-                            socket.emit('notification', 'Cannot place block inside yourself!');
-                        }
+                        socket.emit('notification', 'Cannot place block here!');
                     }
                 }
             }
@@ -2006,6 +2101,9 @@
             }
             
             cleanupOldBreakingOverlays();
+            
+            // Update placement indicator
+            updatePlacementIndicator();
 
             // Weapon/tool bobbing animation
             if (weaponToolInHand && !isSpectator) {
@@ -2013,7 +2111,6 @@
                 const bobAmount = Math.sin(swordBobTime) * 0.05;
                 weaponToolInHand.position.y = -0.3 + bobAmount;
                 
-                // Slight rotation for swinging effect when moving
                 if (moveState.fwd || moveState.bwd || moveState.l || moveState.r) {
                     weaponToolInHand.rotation.z = Math.sin(swordBobTime * 2) * 0.1;
                 } else {
@@ -2260,7 +2357,6 @@
                         }
                     }
                     
-                    // Rotate wind charge
                     windcharge.material.rotation += 0.15;
                     windcharge.material.needsUpdate = true;
                 }
@@ -2373,12 +2469,10 @@
                 
                 data.group.visible = true;
                 
-                // FIX: Properly position player model to avoid sinking
-                // The server sends eye position, but we need to position the feet
                 const eyeHeight = data.crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
                 const targetFeetPosition = {
                     x: data.targetPos.x,
-                    y: data.targetPos.y - eyeHeight + 0.9, // Adjust to place feet correctly
+                    y: data.targetPos.y - eyeHeight + 0.9,
                     z: data.targetPos.z
                 };
                 
@@ -2397,31 +2491,23 @@
                     data.healthBar.style.backgroundColor = health > 5 ? '#4CAF50' : health > 2 ? '#FFA500' : '#FF0000';
                 }
                 
-                // Update other players' item display with bobbing animation
                 if (playerItems.has(id)) {
                     const item = playerItems.get(id);
                     
-                    // Make item face the camera
                     item.lookAt(camera.position);
                     
-                    // Add subtle bobbing animation when player is moving
                     const isMoving = data.group.position.distanceTo(data.lastPos || data.group.position) > 0.01;
                     if (isMoving) {
-                        // Bobbing animation
                         const bobOffset = Math.sin(time * 0.01) * 0.05;
                         item.position.y = 0.8 + bobOffset;
-                        
-                        // Slight rotation
                         item.rotation.z = Math.PI / 4 + Math.sin(time * 0.005) * 0.1;
                     } else {
                         item.position.y = 0.8;
                         item.rotation.z = Math.PI / 4;
                     }
                     
-                    // Store last position for movement detection
                     data.lastPos = data.group.position.clone();
                     
-                    // Rotate texture for certain items
                     const userData = item.userData;
                     if (userData && (userData.itemType === 'Enderpearl' || 
                                     userData.itemType === 'Fireball' || 
@@ -2473,6 +2559,7 @@
             selectedSlotIndex = index;
             updateUI();
             updateEquipmentInHand();
+            updatePlacementIndicator();
             
             const slot = inventory[selectedSlotIndex];
             const overlay = document.getElementById('item-name-overlay');
@@ -2635,7 +2722,6 @@
             const group = new THREE.Group();
             group.name = id;
 
-            // Create player body parts
             const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
             const headMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
             const head = new THREE.Mesh(headGeo, headMat);
@@ -2669,7 +2755,6 @@
             rightLeg.position.set(-0.2, 0, 0);
             group.add(rightLeg);
 
-            // Name tag
             const canvas = document.createElement('canvas');
             canvas.width = 256;
             canvas.height = 64;
@@ -2709,7 +2794,6 @@
 
             playerHealth.set(id, health);
             
-            // Create item in hand if equipped
             if (equippedItem) {
                 updateOtherPlayerItem(id, equippedItem);
             }
@@ -2718,7 +2802,6 @@
         }
 
         function updateOtherPlayerItem(id, itemType) {
-            // Remove existing item
             if (playerItems.has(id)) {
                 const oldItem = playerItems.get(id);
                 const op = otherPlayers.get(id);
@@ -2735,7 +2818,6 @@
             
             let texture = null;
             
-            // Map item types to textures
             if (itemType === 'Wooden Sword') texture = woodenSwordTexture;
             else if (itemType === 'Iron Sword') texture = ironSwordTexture;
             else if (itemType === 'Emerald Sword') texture = emeraldSwordTexture;
@@ -2750,7 +2832,6 @@
             else if (itemType === 'Obsidian') texture = obsidianTexture;
             
             if (!texture) {
-                // For items without specific textures, create colored sprite
                 const blockData = BLOCK_TYPES[itemType];
                 if (blockData) {
                     const material = new THREE.SpriteMaterial({ 
@@ -2777,7 +2858,7 @@
             
             const item = new THREE.Sprite(material);
             item.scale.set(0.4, 0.4, 1);
-            item.position.set(-0.3, 0.8, 0); // Position in right hand
+            item.position.set(-0.3, 0.8, 0);
             item.userData = { type: 'item', playerId: id, itemType: itemType };
             
             op.group.add(item);
@@ -2839,6 +2920,7 @@
         socket.on('yourId', (id) => {
             playerId = id;
             setSpectatorMode(true);
+            createPlacementIndicator();
         });
 
         socket.on('initWorld', ({ blocks, pickups, spawners: initSpawners, gameActive, playersNeeded }) => {
@@ -2861,12 +2943,10 @@
                 createOtherPlayer(id, health || 10, equippedItem);
                 const op = otherPlayers.get(id);
                 
-                // FIX: Properly position player model to avoid sinking
-                // The server sends eye position, but we need to position the feet
                 const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
                 op.targetPos = {
                     x: pos.x,
-                    y: pos.y - eyeHeight + 0.9, // Adjust to place feet correctly
+                    y: pos.y - eyeHeight + 0.9,
                     z: pos.z
                 };
                 op.targetRot = rot;
@@ -2881,12 +2961,10 @@
             createOtherPlayer(id, health || 10, equippedItem);
             const op = otherPlayers.get(id);
             
-            // FIX: Properly position player model to avoid sinking
-            // The server sends eye position, but we need to position the feet
             const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
             op.targetPos = {
                 x: pos.x,
-                y: pos.y - eyeHeight + 0.9, // Adjust to place feet correctly
+                y: pos.y - eyeHeight + 0.9,
                 z: pos.z
             };
             op.targetRot = rot;
@@ -2904,12 +2982,10 @@
                     op = otherPlayers.get(id);
                 }
                 if (op) {
-                    // FIX: Properly position player model to avoid sinking
-                    // The server sends eye position, but we need to position the feet
                     const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
                     op.targetPos = {
                         x: pos.x,
-                        y: pos.y - eyeHeight + 0.9, // Adjust to place feet correctly
+                        y: pos.y - eyeHeight + 0.9,
                         z: pos.z
                     };
                     op.targetRot = rot;
@@ -2951,7 +3027,6 @@
         socket.on('updateCurrency', (curr) => {
             currency = curr;
             updateUI();
-            // Refresh shop when currency updates
             if (isShopOpen()) {
                 renderShop();
             }
@@ -2961,6 +3036,7 @@
             inventory = inv;
             updateUI();
             updateEquipmentInHand();
+            updatePlacementIndicator();
             wasBuying = false;
         });
         
@@ -3069,7 +3145,6 @@
             velocity.set(0, 0, 0);
             showNotification('Teleported!', 1500);
             
-            // Sync position immediately with server
             if (!isSpectator) {
                 socket.emit('playerUpdate', {
                     pos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
@@ -3178,6 +3253,11 @@
             
             removeWeaponToolFromHand();
             
+            if (placementIndicator) {
+                scene.remove(placementIndicator);
+                placementIndicator = null;
+            }
+            
             data.blocks.forEach(({ x, y, z, type }) => {
                 addBlockMesh(x, y, z, type);
             });
@@ -3193,6 +3273,8 @@
             
             setSpectatorMode(true);
             showNotification('Game reset! Waiting for players...', 3000);
+            
+            createPlacementIndicator();
         });
 
         socket.on('playerReset', (data) => {
