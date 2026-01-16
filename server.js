@@ -484,6 +484,7 @@ function startPlayerCheck() {
     }, 1000);
 }
 
+// FIXED: Improved block breaking validation
 function validateBlockBreaking(playerId, x, y, z, type) {
     const p = players.get(playerId);
     if (!p || p.spectator) return false;
@@ -494,17 +495,22 @@ function validateBlockBreaking(playerId, x, y, z, type) {
     const blockType = blocks.get(key);
     if (blockType !== type) return false;
     
+    // Calculate distance from player's eye position
     const eyeHeight = p.crouch ? 1.3 : 1.6;
-    const playerEyeY = p.pos.y;
+    const playerEyeY = p.pos.y; // This is eye position
+    
+    const blockCenterX = x + 0.5;
     const blockCenterY = y + 0.5;
+    const blockCenterZ = z + 0.5;
     
     const dist = Math.hypot(
-        p.pos.x - (x + 0.5),
+        p.pos.x - blockCenterX,
         playerEyeY - blockCenterY,
-        p.pos.z - (z + 0.5)
+        p.pos.z - blockCenterZ
     );
     
-    return dist <= 5.5;
+    // Allow slightly longer distance for breaking (6.5 blocks)
+    return dist <= 6.5;
 }
 
 function processBlockBreak(playerId, x, y, z) {
@@ -701,6 +707,7 @@ io.on('connection', (socket) => {
         socket.emit('updateCurrency', { ...p.currency });
     });
 
+    // FIXED: Break attempt with proper validation
     socket.on('breakAttempt', ({ x, y, z }) => {
         const p = players.get(socket.id);
         if (p.spectator) return;
@@ -713,15 +720,27 @@ io.on('connection', (socket) => {
         
         const type = blocks.get(key);
         
+        // Validate the player can break this block (distance, etc.)
         if (!validateBlockBreaking(socket.id, x, y, z, type)) {
             socket.emit('revertBreak', { x, y, z, type });
             return;
         }
         
+        // Check if this is the player's own bed (can't break own bed)
+        if (type === 'Bed') {
+            if (p.bedPos && p.bedPos.x === x && p.bedPos.y === y && p.bedPos.z === z) {
+                socket.emit('revertBreak', { x, y, z, type });
+                socket.emit('notification', 'Cannot break your own bed!');
+                return;
+            }
+        }
+        
+        // Process the break
         if (processBlockBreak(socket.id, x, y, z)) {
-            return;
+            return; // Success
         } else {
             socket.emit('revertBreak', { x, y, z, type });
+            socket.emit('notification', 'Inventory full or unable to break!');
         }
     });
 
@@ -758,7 +777,7 @@ io.on('connection', (socket) => {
             p.pos.z - (z + 0.5)
         );
         
-        if (dist > 5.5) {
+        if (dist > 6.5) {
             socket.emit('revertPlace', { x, y, z });
             socket.emit('notification', 'Too far away!');
             return;
@@ -1151,6 +1170,7 @@ io.on('connection', (socket) => {
                             }
                         }
                         
+                        // IMPORTANT: Use removeBlock function which broadcasts to all clients
                         removeBlock(blockX, blockY, blockZ);
                         blocksDestroyed.push({ x: blockX, y: blockY, z: blockZ, type: blockType });
                     }
