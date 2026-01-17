@@ -44,7 +44,24 @@ Once you have atleast 16 blocks, you can start briding to the gold island. (the 
 1) Hold shift, and go over the edge of the island. (you won't fall!) 
 2) keep holding shift, and put the crosshair on the side of the block you are standing on, then right click.
 ![Image of bridging](https://i.ibb.co/SD90GKNq/Screenshot-from-2026-01-17-17-17-24.png)
-3) repeat this until you are out of blocks
+3) crouch over to the block you placed, and repeat this until you are out of blocks
+
+GOLD
+--------------
+If you bridged correctly, you should be near the gold island!
+Gold has a use similar to iron, but is mainly used to buy tools with it.
+
+With gold you can buy:
+1) Pickaxe, breaks stone and obsidian 3x faster.
+2) Axe, breaks wood and glass 3x faster.
+3) Wood, High quantity, decent strength block.
+4) Iron Sword, stronger than the wooden sword.
+5) Stone, high strength block which is ideal for defending your bed.
+6) Wind Charge, a projectile which knocks back enemies on contact.
+
+![Image of gold](https://i.ibb.co/cjT4wc0/Screenshot-from-2026-01-17-20-36-11.png)
+Gold is a resource necessary for progression, so expect competition for it!
+
 
 EMERALDS
 --------------
@@ -58,7 +75,7 @@ With emeralds you can buy:
 Emeralds are the best resource in the game, so expect players to be there before you!
 
 
-This tutorial covers the basics of my game, but there are many more aspects which you will have to learn yourself, so that you can be the ultimate player.
+This tutorial covers the basics of my game, but there are many more aspects and strategies which you will have to learn and discover by yourself,
 **Have fun playing Bedwars!**
 
 
