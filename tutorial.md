@@ -1,4 +1,4 @@
-[ 2 PEOPLE REQUIRED TO START ]
+[ 2 PEOPLE REQUIRED TO START ],
 Only PC support for now.
 --------------
 
@@ -16,7 +16,8 @@ Once you have enough resources, click on an item which is lit up to buy it. (hin
 ![Image of shop](https://i.ibb.co/8nvH8Mj2/Screenshot-from-2026-01-17-17-02-55.png)
 Some items cannot be bought with iron, you will have to bridge out to the other islands to gain different resources.
 
--------BRIDGING-------
+**BRIDGING**
+--------------
 To bridge to different islands, you will first need blocks.
 Once you have atleast 16 blocks, you can start briding to the gold island. (the island closest to you)
 
@@ -25,7 +26,8 @@ Once you have atleast 16 blocks, you can start briding to the gold island. (the 
 ![Image of bridging](https://i.ibb.co/SD90GKNq/Screenshot-from-2026-01-17-17-17-24.png)
 3) repeat this until you are out of blocks
 
--------EMERALDS-------
+EMERALDS
+--------------
 You can buy better items with the gold you collected, but nothing beats emeralds, so the emerald island should be your next briding location.
 
 With emeralds you can buy:
@@ -37,7 +39,7 @@ Emeralds are the best resource in the game, so expect players to be there before
 
 
 This tutorial covers the basics of my game, but there are many more aspects which you will have to learn yourself, so that you can be the ultimate player.
-Have fun playing Bedwars!
+**Have fun playing Bedwars!**
 
 
 
