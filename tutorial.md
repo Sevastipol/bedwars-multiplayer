@@ -1,7 +1,7 @@
-[ 2 PEOPLE REQUIRED TO START ],
-Only PC support for now.
+[ 2 PEOPLE REQUIRED TO START ]
 --------------
-
+_Only PC support for now
+_
 Bedwars is a game of strategy, the most important aspect: you respawn if your bed isn't broken.
 
 There are 2 main ways to play the game:
