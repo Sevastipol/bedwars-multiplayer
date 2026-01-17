@@ -10,5 +10,5 @@ There are 2 main ways to play the game:
 -------SHOP-------
 To open the shop, click [B] to toggle it on and off.
 Once you have enough resources, click on an item which is lit up to buy it.
-[Image showing the shop]((https://i.ibb.co/8nvH8Mj2/Screenshot-from-2026-01-17-17-02-55.png))
+![Image showing the shop]((https://i.ibb.co/8nvH8Mj2/Screenshot-from-2026-01-17-17-02-55.png))
 
