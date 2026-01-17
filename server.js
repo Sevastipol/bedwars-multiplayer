@@ -36,8 +36,6 @@ const BED_DESTRUCTION_TIME = 10 * 60 * 1000;
 const ROUND_DURATION = 15 * 60 * 1000;
 const REQUIRED_PLAYERS = 2;
 const PLAYER_MAX_HEALTH = 10;
-const HEALTH_REGEN_DELAY = 10 * 1000; // 10 seconds in milliseconds
-const HEALTH_REGEN_RATE = 1; // 1 health per second
 
 // State
 const blocks = new Map();
@@ -272,8 +270,6 @@ function assignPlayerToIsland(playerId) {
             p.rot = { yaw: 0, pitch: 0 };
             p.spectator = false;
             p.health = PLAYER_MAX_HEALTH;
-            p.lastHitTime = Date.now();
-            p.lastHealthRegen = Date.now();
             
             return {
                 bedPos: p.bedPos,
@@ -327,7 +323,6 @@ function eliminatePlayer(playerId, eliminatorId) {
     p.spectator = true;
     p.health = PLAYER_MAX_HEALTH;
     p.pos = { x: 9 + 2.5, y: 50, z: 9 + 2.5 };
-    p.lastHitTime = 0; // Reset last hit time
     
     if (p.bedPos) {
         for (let i = 0; i < ironIslands.length; i++) {
@@ -387,8 +382,6 @@ function resetGame() {
         p.lastEnderpearlThrow = 0;
         p.lastFireballThrow = 0;
         p.lastWindchargeThrow = 0;
-        p.lastHitTime = 0;
-        p.lastHealthRegen = Date.now();
         
         io.to(id).emit('setSpectator', true);
         io.to(id).emit('respawn', {
@@ -397,7 +390,6 @@ function resetGame() {
         });
         io.to(id).emit('updateInventory', p.inventory);
         io.to(id).emit('updateCurrency', p.currency);
-        io.to(id).emit('updateHealth', p.health);
     });
     
     io.emit('worldReset', { 
@@ -454,13 +446,10 @@ function startPlayerCheck() {
                                     p.rot = assignment.rot;
                                     p.bedPos = assignment.bedPos;
                                     p.health = PLAYER_MAX_HEALTH;
-                                    p.lastHitTime = Date.now();
-                                    p.lastHealthRegen = Date.now();
                                     assignedPlayers.push(id);
                                     
                                     io.to(id).emit('assignBed', assignment);
                                     io.to(id).emit('setSpectator', false);
-                                    io.to(id).emit('updateHealth', p.health);
                                 }
                             }
                         });
@@ -623,7 +612,6 @@ io.on('connection', (socket) => {
         health: PLAYER_MAX_HEALTH,
         id: socket.id,
         lastHitTime: 0,
-        lastHealthRegen: Date.now(),
         equippedItem: null,
         lastEnderpearlThrow: 0,
         lastFireballThrow: 0,
@@ -653,7 +641,6 @@ io.on('connection', (socket) => {
 
     socket.emit('yourId', socket.id);
     socket.emit('setSpectator', true);
-    socket.emit('updateHealth', playerState.health);
 
     const otherPlayers = Array.from(players.entries())
         .filter(([id]) => id !== socket.id)
@@ -890,7 +877,6 @@ io.on('connection', (socket) => {
         }
         
         target.health -= damage;
-        target.lastHitTime = now; // Update last hit time for regeneration
         attacker.lastHitTime = now;
         
         applyKnockback(target, attacker.pos, 1.5, 0.4);
@@ -909,7 +895,6 @@ io.on('connection', (socket) => {
             
             if (hasBed) {
                 target.health = PLAYER_MAX_HEALTH;
-                target.lastHitTime = now; // Reset last hit time
                 
                 target.pos.x = target.bedPos.x + 0.5;
                 target.pos.y = target.bedPos.y + 2 + 1.6;
@@ -1338,34 +1323,6 @@ setInterval(() => {
             suddenDeath = true;
         }
 
-        // Health regeneration system
-        players.forEach((p, id) => {
-            if (!p.spectator && p.health < PLAYER_MAX_HEALTH) {
-                // Check if enough time has passed since last hit
-                if (now - p.lastHitTime >= HEALTH_REGEN_DELAY) {
-                    // Check if it's time to regenerate health
-                    if (now - p.lastHealthRegen >= 1000) { // 1 second
-                        p.health += HEALTH_REGEN_RATE;
-                        if (p.health > PLAYER_MAX_HEALTH) {
-                            p.health = PLAYER_MAX_HEALTH;
-                        }
-                        p.lastHealthRegen = now;
-                        
-                        // Notify the player about health regeneration
-                        io.to(id).emit('updateHealth', p.health);
-                        io.emit('playerHit', {
-                            attackerId: null,
-                            targetId: id,
-                            newHealth: p.health
-                        });
-                    }
-                } else {
-                    // Reset regeneration timer if recently hit
-                    p.lastHealthRegen = now;
-                }
-            }
-        });
-
         const pearlUpdates = [];
         const pearlRemovals = [];
         
@@ -1481,7 +1438,6 @@ setInterval(() => {
             
             if (directHitPlayer) {
                 directHitPlayer.player.health -= 6;
-                directHitPlayer.player.lastHitTime = now; // Update last hit time for regeneration
                 
                 applyKnockback(directHitPlayer.player, fireball.pos, 8.0, 1.5, true);
                 
@@ -1500,7 +1456,6 @@ setInterval(() => {
                     
                     if (hasBed) {
                         directHitPlayer.player.health = PLAYER_MAX_HEALTH;
-                        directHitPlayer.player.lastHitTime = now; // Reset last hit time
                         
                         directHitPlayer.player.pos.x = directHitPlayer.player.bedPos.x + 0.5;
                         directHitPlayer.player.pos.y = directHitPlayer.player.bedPos.y + 2 + 1.6;
@@ -1861,7 +1816,6 @@ setInterval(() => {
                 
                 if (hasBed) {
                     p.health = PLAYER_MAX_HEALTH;
-                    p.lastHitTime = now; // Reset last hit time
                     
                     p.pos.x = p.bedPos.x + 0.5;
                     p.pos.y = p.bedPos.y + 2 + 1.6;
