@@ -2236,8 +2236,8 @@
                 }
                 data.group.scale.y = data.crouch ? 0.75 : 1;
                 
-                if (data.healthBar && playerHealth.has(id)) {
-                    const health = playerHealth.get(id);
+                if (data.healthBar && otherPlayersHealth.has(id)) {
+                    const health = otherPlayersHealth.get(id);
                     data.healthBar.style.width = `${health * 10}%`;
                     data.healthBar.style.backgroundColor = health > 5 ? '#4CAF50' : health > 2 ? '#FFA500' : '#FF0000';
                 }
@@ -2692,7 +2692,7 @@
         }
 
         function updatePlayerHealth(id, health) {
-            playerHealth.set(id, health);
+            otherPlayersHealth.set(id, health);
             
             const op = otherPlayers.get(id);
             if (!op || !op.group) return;
@@ -2935,7 +2935,7 @@
         let blocksMeshes = new Map();
         let pickupMeshes = new Map();
         let otherPlayers = new Map();
-        let playerHealth = new Map();
+        let otherPlayersHealth = new Map(); 
         let playerItems = new Map();
 
         // Hide loading when connected
