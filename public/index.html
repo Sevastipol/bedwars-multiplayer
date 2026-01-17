@@ -711,7 +711,7 @@
         function updateWaitingMessage(playersNeeded) {
             const messageElement = document.getElementById('waiting-message');
             if (playersNeeded > 0) {
-                messageElement.textContent = `Waiting for ${playersNeeded--} more player${(playersNeeded) !== 1 ? 's' : ''}...`;
+                messageElement.textContent = `Waiting for ${playersNeeded} more player${playersNeeded > 1 ? 's' : ''}...`;
                 messageElement.style.display = 'block';
             } else {
                 messageElement.style.display = 'none';
@@ -1009,14 +1009,14 @@
             if (fireballTexture) {
                 material = new THREE.SpriteMaterial({ 
                     map: fireballTexture,
-                    color: 0xb5b5b5
+                    color: 0xFF5500
 ,
                     opacity: 1.0,
                     transparent: true
                 });
             } else {
                 material = new THREE.SpriteMaterial({ 
-                    color: 0xb5b5b5
+                    color: 0xFF5500
 ,
                     opacity: 1.0,
                     transparent: true
