@@ -5,6 +5,7 @@ Only PC support for now.
 Bedwars is a game of strategy, the most important aspect: you respawn if your bed isn't broken.
 
 There are 2 main ways to play the game:
+
 1) offense - buy blocks and bridge to enemy bases to break their bed and eliminate them
 2) defense - stay at your base and put blocks around your bed which make it much harder to break
 
