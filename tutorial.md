@@ -26,6 +26,8 @@ With iron you can buy:
 ![Image of iron](https://i.ibb.co/dJMpmzh3/Screenshot-from-2026-01-17-20-35-41.png)
 Iron is a very plentiful resource, which allows you to buy alot with it.
 
+Once you have 5 iron, open the shop and buy glass.
+
 
 **SHOP**
 --------------
