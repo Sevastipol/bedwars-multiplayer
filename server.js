@@ -895,6 +895,9 @@ io.on('connection', (socket) => {
         
         applyKnockback(target, attacker.pos, 1.5, 0.4);
         
+        // Send health update to the target player
+        socket.to(targetId).emit('updateHealth', target.health);
+        
         io.emit('playerHit', {
             attackerId: attacker.id,
             targetId: target.id,
@@ -909,7 +912,8 @@ io.on('connection', (socket) => {
             
             if (hasBed) {
                 target.health = PLAYER_MAX_HEALTH;
-                target.lastHitTime = now; // Reset last hit time
+                target.lastHitTime = now;
+                target.lastHealthRegen = now;
                 
                 target.pos.x = target.bedPos.x + 0.5;
                 target.pos.y = target.bedPos.y + 2 + 1.6;
@@ -922,6 +926,9 @@ io.on('connection', (socket) => {
                     y: target.pos.y,
                     z: target.pos.z
                 });
+                
+                // Send health update after respawn
+                io.to(targetId).emit('updateHealth', target.health);
                 
                 io.emit('playerHit', {
                     attackerId: null,
@@ -1481,9 +1488,12 @@ setInterval(() => {
             
             if (directHitPlayer) {
                 directHitPlayer.player.health -= 6;
-                directHitPlayer.player.lastHitTime = now; // Update last hit time for regeneration
+                directHitPlayer.player.lastHitTime = now; // Update last hit time
                 
                 applyKnockback(directHitPlayer.player, fireball.pos, 8.0, 1.5, true);
+                
+                // Send health update to the hit player
+                socket.to(directHitPlayer.id).emit('updateHealth', directHitPlayer.player.health);
                 
                 io.emit('playerHit', {
                     attackerId: fireball.owner,
@@ -1500,7 +1510,8 @@ setInterval(() => {
                     
                     if (hasBed) {
                         directHitPlayer.player.health = PLAYER_MAX_HEALTH;
-                        directHitPlayer.player.lastHitTime = now; // Reset last hit time
+                        directHitPlayer.player.lastHitTime = now;
+                        directHitPlayer.player.lastHealthRegen = now;
                         
                         directHitPlayer.player.pos.x = directHitPlayer.player.bedPos.x + 0.5;
                         directHitPlayer.player.pos.y = directHitPlayer.player.bedPos.y + 2 + 1.6;
@@ -1513,6 +1524,9 @@ setInterval(() => {
                             y: directHitPlayer.player.pos.y,
                             z: directHitPlayer.player.pos.z
                         });
+                        
+                        // Send health update after respawn
+                        io.to(directHitPlayer.id).emit('updateHealth', directHitPlayer.player.health);
                         
                         io.emit('playerHit', {
                             attackerId: fireball.owner,
@@ -1861,7 +1875,8 @@ setInterval(() => {
                 
                 if (hasBed) {
                     p.health = PLAYER_MAX_HEALTH;
-                    p.lastHitTime = now; // Reset last hit time
+                    p.lastHitTime = now;
+                    p.lastHealthRegen = now;
                     
                     p.pos.x = p.bedPos.x + 0.5;
                     p.pos.y = p.bedPos.y + 2 + 1.6;
@@ -1871,6 +1886,7 @@ setInterval(() => {
                     
                     io.to(id).emit('respawn', { pos: p.pos, rot: p.rot });
                     io.to(id).emit('notification', 'You fell into the void and respawned at your bed!');
+                    io.to(id).emit('updateHealth', p.health);
                     
                     // Update other players about the health restoration
                     io.emit('playerHit', {
