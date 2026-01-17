@@ -54,6 +54,54 @@
             pointer-events: none;
         }
 
+        #health-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 15px;
+            border-radius: 10px;
+            pointer-events: none;
+            display: none;
+            z-index: 5;
+        }
+
+        .health-hearts {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+
+        .health-heart {
+            width: 24px;
+            height: 24px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+
+        .health-heart.full {
+            background-image: url('https://i.ibb.co/3sBmqHY/heart-full.png');
+        }
+
+        .health-heart.half {
+            background-image: url('https://i.ibb.co/9hFpKZy/heart-half.png');
+        }
+
+        .health-heart.empty {
+            background-image: url('https://i.ibb.co/MMMqS6n/heart-empty.png');
+        }
+
+        #regen-indicator {
+            font-size: 12px;
+            color: #4CAF50;
+            text-align: center;
+            margin-top: 5px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
         .currency-row {
             display: flex;
             align-items: center;
@@ -358,6 +406,12 @@
     <!-- Timer Display -->
     <div id="timer">15:00</div>
     
+    <!-- Player Health Display -->
+    <div id="health-container">
+        <div class="health-hearts" id="health-hearts"></div>
+        <div id="regen-indicator">Regenerating...</div>
+    </div>
+    
     <!-- Spectator Indicator -->
     <div id="spectator-indicator">SPECTATOR MODE</div>
     
@@ -420,11 +474,6 @@
 
         const socket = io({ reconnection: true, reconnectionAttempts: 10, reconnectionDelay: 1000 });
 
-        // Hide loading when connected
-        socket.on('connect', () => {
-            document.getElementById('loading').style.display = 'none';
-        });
-
         // --- Game State ---
         let isSpectator = true;
         let roundTimeRemaining = 900;
@@ -434,62 +483,147 @@
         let lastEnderpearlThrow = 0;
         let lastFireballThrow = 0;
         let lastWindchargeThrow = 0;
+        let playerHealth = 10;
+        let lastHitTime = 0;
+        let regenTimer = null;
+        let regenIndicatorTimer = null;
 
-        // --- Config ---
-        const BLOCK_TYPES = {
-            'Grass': { color: 0x4d9043, cost: { iron: 5 }, breakTime: 1.2, buyAmount: 8, hasTexture: true },
-            'Glass': { color: 0xade8f4, cost: { iron: 5 }, breakTime: 0.4, buyAmount: 16, opacity: 0.6 },
-            'Wood': { color: 0x5d4037, cost: { gold: 5 }, breakTime: 3, buyAmount: 32, hasTexture: true },
-            'Stone': { color: 0x777777, cost: { gold: 5 }, breakTime: 6, buyAmount: 8, hasTexture: true },
-            'Obsidian': { color: 0x111111, cost: { emerald: 1 }, breakTime: 12, buyAmount: 1, hasTexture: true },
-            'Bed': { color: 0xff0000, breakTime: 0.8, buyAmount: 1, hasTexture: false },
-            'Enderpearl': { color: 0x00ff88, cost: { emerald: 2 }, buyAmount: 1, isItem: true, hasTexture: true },
-            'Fireball': { color: 0xff5500, cost: { iron: 48 }, buyAmount: 1, isItem: true, hasTexture: true },
-            'Wind Charge': { color: 0x88ccff, cost: { gold: 10 }, buyAmount: 1, isItem: true, hasTexture: true },
-            'Wooden Sword': { color: 0x8B4513, cost: { iron: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 2, hasTexture: true },
-            'Iron Sword': { color: 0xC0C0C0, cost: { gold: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 3, hasTexture: true },
-            'Emerald Sword': { color: 0x00FF00, cost: { emerald: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 4, hasTexture: true },
-            'Axe': { color: 0x8B4513, cost: { gold: 5 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'axe', breakMultiplier: 0.333, hasTexture: true },
-            'Pickaxe': { color: 0xC0C0C0, cost: { gold: 5 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'pickaxe', breakMultiplier: 0.333, hasTexture: true }
-        };
-        const MAX_STACK = 64;
-        const INVENTORY_SIZE = 9;
-
-        // --- State ---
-        let currency = { iron: 0, gold: 0, emerald: 0 };
-        let inventory = new Array(INVENTORY_SIZE).fill(null);
-        let selectedSlotIndex = 0;
-        let overlayTimeout;
-
-        const blocksInScene = [];
-        const resourceSpawners = [];
-        const resourcePickups = [];
-        const projectiles = new Map();
-        const fireballProjectiles = new Map();
-        const windchargeProjectiles = new Map();
+        // --- Health Functions ---
+        function updateHealthDisplay(health) {
+            playerHealth = health;
+            const healthContainer = document.getElementById('health-container');
+            const heartsContainer = document.getElementById('health-hearts');
+            
+            if (isSpectator) {
+                healthContainer.style.display = 'none';
+                return;
+            }
+            
+            healthContainer.style.display = 'block';
+            heartsContainer.innerHTML = '';
+            
+            const fullHearts = Math.floor(health / 2);
+            const hasHalfHeart = health % 2 === 1;
+            const emptyHearts = 5 - fullHearts - (hasHalfHeart ? 1 : 0);
+            
+            // Add full hearts
+            for (let i = 0; i < fullHearts; i++) {
+                const heart = document.createElement('div');
+                heart.className = 'health-heart full';
+                heartsContainer.appendChild(heart);
+            }
+            
+            // Add half heart if needed
+            if (hasHalfHeart) {
+                const heart = document.createElement('div');
+                heart.className = 'health-heart half';
+                heartsContainer.appendChild(heart);
+            }
+            
+            // Add empty hearts
+            for (let i = 0; i < emptyHearts; i++) {
+                const heart = document.createElement('div');
+                heart.className = 'health-heart empty';
+                heartsContainer.appendChild(heart);
+            }
+            
+            // Start regeneration check
+            checkHealthRegeneration();
+        }
         
-        // Breaking overlays for other players
-        const breakingOverlays = new Map();
+        function checkHealthRegeneration() {
+            if (regenTimer) {
+                clearTimeout(regenTimer);
+            }
+            
+            if (regenIndicatorTimer) {
+                clearTimeout(regenIndicatorTimer);
+            }
+            
+            // If health is full, hide regen indicator
+            if (playerHealth >= 10) {
+                document.getElementById('regen-indicator').style.opacity = '0';
+                return;
+            }
+            
+            // Calculate time since last hit
+            const timeSinceLastHit = Date.now() - lastHitTime;
+            const regenDelay = 10000; // 10 seconds
+            
+            if (timeSinceLastHit >= regenDelay) {
+                // Show regen indicator
+                const regenIndicator = document.getElementById('regen-indicator');
+                regenIndicator.style.opacity = '1';
+                
+                // Health will regenerate automatically from server
+            } else {
+                // Hide regen indicator
+                document.getElementById('regen-indicator').style.opacity = '0';
+                
+                // Schedule check again when regen should start
+                const timeUntilRegen = regenDelay - timeSinceLastHit;
+                regenTimer = setTimeout(checkHealthRegeneration, timeUntilRegen + 100);
+            }
+        }
+        
+        function onPlayerHit() {
+            lastHitTime = Date.now();
+            checkHealthRegeneration();
+        }
 
-        // Breaking state
-        let isBreaking = false;
-        let breakingBlock = null;
-        let breakingStartTime = 0;
-        let breakingDuration = 0;
-        let breakingOverlay = null;
-
-        // Crouching state
-        let isCrouching = false;
-
-        // Weapon/Tool in hand
-        let weaponToolInHand = null;
-
-        let playerId = null;
-        let blocksMeshes = new Map();
-        let pickupMeshes = new Map();
-        let otherPlayers = new Map();
-        let playerHealth = new Map();
-        let playerItems = new Map();
+        // --- Spectator Functions ---
+        function setSpectatorMode(spectator) {
+            isSpectator = spectator;
+            const indicator = document.getElementById('spectator-indicator');
+            
+            if (spectator) {
+                indicator.style.display = 'block';
+                document.getElementById('stats').style.display = 'none';
+                document.getElementById('health-container').style.display = 'none';
+                document.getElementById('hotbar-container').style.display = 'none';
+                document.getElementById('crosshair').style.display = 'none';
+                document.getElementById('controls-hint').style.display = 'none';
+                document.getElementById('break-progress').style.display = 'none';
+                document.getElementById('timer').style.display = 'none';
+                velocity.y = 0;
+                onGround = true;
+                
+                // Remove weapon/tool from hand
+                removeWeaponToolFromHand();
+                
+                if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
+                    setTimeout(() => {
+                        if (!controls.isLocked && !isShopOpen()) {
+                            controls.lock();
+                        }
+                    }, 100);
+                }
+            } else {
+                indicator.style.display = 'none';
+                document.getElementById('stats').style.display = 'block';
+                document.getElementById('health-container').style.display = 'block';
+                document.getElementById('hotbar-container').style.display = 'flex';
+                document.getElementById('crosshair').style.display = 'block';
+                document.getElementById('controls-hint').style.display = 'block';
+                if (isInRound) {
+                    document.getElementById('timer').style.display = 'block';
+                }
+                
+                // Update health display
+                updateHealthDisplay(playerHealth);
+                
+                // Update equipment in hand
+                updateEquipmentInHand();
+                
+                if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
+                    setTimeout(() => {
+                        if (!controls.isLocked && !isShopOpen()) {
+                            controls.lock();
+                        }
+                    }, 100);
+                }
+            }
+        }
 
         // --- Fullscreen Functions ---
         function enterFullscreen() {
@@ -571,55 +705,6 @@
                 roundTimerInterval = null;
             }
             document.getElementById('timer').style.display = 'none';
-        }
-
-        // --- Spectator Functions ---
-        function setSpectatorMode(spectator) {
-            isSpectator = spectator;
-            const indicator = document.getElementById('spectator-indicator');
-            
-            if (spectator) {
-                indicator.style.display = 'block';
-                document.getElementById('stats').style.display = 'none';
-                document.getElementById('hotbar-container').style.display = 'none';
-                document.getElementById('crosshair').style.display = 'none';
-                document.getElementById('controls-hint').style.display = 'none';
-                document.getElementById('break-progress').style.display = 'none';
-                document.getElementById('timer').style.display = 'none';
-                velocity.y = 0;
-                onGround = true;
-                
-                // Remove weapon/tool from hand
-                removeWeaponToolFromHand();
-                
-                if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
-                    setTimeout(() => {
-                        if (!controls.isLocked && !isShopOpen()) {
-                            controls.lock();
-                        }
-                    }, 100);
-                }
-            } else {
-                indicator.style.display = 'none';
-                document.getElementById('stats').style.display = 'block';
-                document.getElementById('hotbar-container').style.display = 'flex';
-                document.getElementById('crosshair').style.display = 'block';
-                document.getElementById('controls-hint').style.display = 'block';
-                if (isInRound) {
-                    document.getElementById('timer').style.display = 'block';
-                }
-                
-                // Update equipment in hand
-                updateEquipmentInHand();
-                
-                if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
-                    setTimeout(() => {
-                        if (!controls.isLocked && !isShopOpen()) {
-                            controls.lock();
-                        }
-                    }, 100);
-                }
-            }
         }
 
         // --- Waiting Message Function ---
@@ -1834,7 +1919,7 @@
                     
                     const pos = intersect.point.clone().add(intersect.face.normal.multiplyScalar(0.5));
 
-                    const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
+                    const currentEyeHeightForFoot = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
                     const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
 
                     const blockX = Math.floor(pos.x);
@@ -1842,8 +1927,8 @@
                     const blockZ = Math.floor(pos.z);
 
                     let canPlace = true;
-                    const playerFeetY = camera.position.y - currentEyeHeight;
-                    const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
+                    const playerFeetY = camera.position.y - currentEyeHeightForFoot;
+                    const playerHeadY = camera.position.y - currentEyeHeightForFoot + currentPlayerHeight;
                     const blockMinY = blockY;
                     const blockMaxY = blockY + 1;
                     if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
@@ -1888,10 +1973,10 @@
         function checkCollision(pos) {
             if (isSpectator) return false;
             
-            const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
+            const currentEyeHeightForFoot = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
             const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
             const playerBox = new THREE.Box3().setFromCenterAndSize(
-                new THREE.Vector3(pos.x, pos.y - (currentEyeHeight - currentPlayerHeight/2), pos.z),
+                new THREE.Vector3(pos.x, pos.y - (currentEyeHeightForFoot - currentPlayerHeight/2), pos.z),
                 new THREE.Vector3(PLAYER_RADIUS * 2, currentPlayerHeight - 0.1, PLAYER_RADIUS * 2)
             );
             for (const b of blocksInScene) {
@@ -3080,6 +3165,10 @@
             camera.position.set(data.pos.x, data.pos.y, data.pos.z);
             camera.rotation.set(data.rot.pitch, data.rot.yaw, 0);
             velocity.set(0, 0, 0);
+            
+            // Reset health regeneration tracking
+            lastHitTime = Date.now();
+            checkHealthRegeneration();
         });
 
         socket.on('teleport', (data) => {
@@ -3131,6 +3220,10 @@
             currency = data.currency;
             updateUI();
             updateEquipmentInHand();
+            
+            // Reset health regeneration tracking
+            lastHitTime = Date.now();
+            checkHealthRegeneration();
         });
 
         socket.on('gameEnd', ({ winner }) => {
@@ -3225,6 +3318,11 @@
 
         socket.on('setSpectator', (spectator) => {
             setSpectatorMode(spectator);
+            if (!spectator) {
+                // Reset health regeneration tracking when entering game
+                lastHitTime = Date.now();
+                checkHealthRegeneration();
+            }
         });
 
         socket.on('updateWaiting', (playersNeeded) => {
@@ -3247,6 +3345,12 @@
             
             if (targetId === playerId && attackerId) {
                 showNotification(`You were hit! Health: ${newHealth}/10`, 2000);
+                onPlayerHit(); // Track when player was hit
+            }
+            
+            // Also update own health display if we were hit
+            if (targetId === playerId) {
+                updateHealthDisplay(newHealth);
             }
         });
 
@@ -3262,9 +3366,15 @@
             removeOtherPlayer(eliminatedId);
         });
 
+        // New health update event
+        socket.on('updateHealth', (health) => {
+            updateHealthDisplay(health);
+        });
+
         // Start
         setSpectatorMode(true);
         updateUI();
+        updateHealthDisplay(playerHealth);
         animate();
 
         window.addEventListener('resize', () => {
