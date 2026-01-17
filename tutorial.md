@@ -20,7 +20,7 @@ Once you have atleast 16 blocks, you can start briding to the gold island. (the 
 
 1) Hold shift, and go over the edge of the island. (you won't fall!) 
 2) keep holding shift, and put the crosshair on the side of the block you are standing on, then right click.
-![Image of bridging]((https://i.ibb.co/SD90GKNq/Screenshot-from-2026-01-17-17-17-24.png))
+![Image of bridging](https://i.ibb.co/SD90GKNq/Screenshot-from-2026-01-17-17-17-24.png)
 3) repeat this until you are out of blocks
 
 -------EMERALDS-------
@@ -30,7 +30,7 @@ With emeralds you can buy:
 1) Enderpearl, a projectile that will teleport you to its point of impact.
 2) Obsidian, the strongest block in the game, ideal for defending your bed.
 3) Emerald Sword, the best weapon in the game, dealing 4 hearts of damage per hit.
-![Image of emeralds]((https://i.ibb.co/pjBcMLWF/Screenshot-from-2026-01-17-17-48-42.png))
+![Image of emeralds](https://i.ibb.co/pjBcMLWF/Screenshot-from-2026-01-17-17-48-42.png)
 Emeralds are the best resource in the game, so expect players to be there before you!
 
 
