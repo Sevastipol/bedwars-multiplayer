@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>Bedwars Multiplayer</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+
     <style>
         body {
             margin: 0;
@@ -1238,30 +1240,32 @@
         }
 
         // --- Weapon/Tool Functions ---
-        function createWeaponToolMesh(type) {
-            let texture = null;
-            
-            if (type === 'Wooden Sword') texture = woodenSwordTexture;
-            else if (type === 'Iron Sword') texture = ironSwordTexture;
-            else if (type === 'Emerald Sword') texture = emeraldSwordTexture;
-            else if (type === 'Axe') texture = axeTexture;
-            else if (type === 'Pickaxe') texture = pickaxeTexture;
-            
-            if (!texture) return null;
-            
-            const material = new THREE.SpriteMaterial({ 
-                map: texture,
-                transparent: true,
-                opacity: 0.9,
-                depthTest: false,
-                depthWrite: false
-            });
-            
-            const mesh = new THREE.Sprite(material);
-            mesh.scale.set(0.5, 0.5, 1);
-            
-            return mesh;
-        }
+       function createWeaponToolMesh(type) {
+    let texture = null;
+    
+    if (type === 'Wooden Sword') texture = woodenSwordTexture;
+    else if (type === 'Iron Sword') texture = ironSwordTexture;
+    else if (type === 'Emerald Sword') texture = emeraldSwordTexture;
+    else if (type === 'Axe') texture = axeTexture;
+    else if (type === 'Pickaxe') texture = pickaxeTexture;
+    
+    if (!texture) return null;
+    
+    const material = new THREE.SpriteMaterial({ 
+        map: texture,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        depthWrite: false
+    });
+    
+    const mesh = new THREE.Sprite(material);
+    // CHANGED: Make 2x bigger for weapons/tools
+    const scaleMultiplier = 1.0; // Base scale for weapons/tools
+    mesh.scale.set(0.5 * scaleMultiplier, 0.5 * scaleMultiplier, 1);
+    
+    return mesh;
+}
 
         function removeWeaponToolFromHand() {
             if (weaponToolInHand) {
@@ -1540,7 +1544,7 @@
                 
                 // Axe breaks glass and wood faster
                 if (tool.toolType === 'axe') {
-                    if (blockType === 'Glass' || blockType === 'Wood') {
+                    if (blockType === 'Glass' || blockType === 'Wood' || blockType === 'Bed'){
                         return baseBreakTime * tool.breakMultiplier;
                     }
                 }
@@ -2527,11 +2531,11 @@
                 if (data.isWeapon) {
                     extraInfo = `<br><span style="color:#ff8888; font-size:0.8em;">Damage: ${data.damage}</span>`;
                 } else if (data.isTool) {
-                    extraInfo = `<br><span style="color:#88aaff; font-size:0.8em;">Breaks ${data.toolType === 'axe' ? 'Glass & Wood 3x faster' : 'Stone & Obsidian 3x faster'}</span>`;
+                    extraInfo = `<br><span style="color:#88aaff; font-size:0.8em;">Breaks ${data.toolType === 'axe' ? 'Glass, Wood & Beds 3x faster' : 'Stone & Obsidian 3x faster'}</span>`;
                 } else if (name === 'Wind Charge') {
-                    extraInfo = `<br><span style="color:#88ccff; font-size:0.8em;">Knocks back players 4 blocks</span>`;
+                    extraInfo = `<br><span style="color:#88ccff; font-size:0.8em;">Knocks back players on impact</span>`;
                 } else if (name === 'Fireball') {
-                    extraInfo = `<br><span style="color:#ffaa00; font-size:0.8em;">Direct hit: 6 damage, Explosion: 0 damage</span>`;
+                    extraInfo = `<br><span style="color:#ffaa00; font-size:0.8em;">Explodes on impact`;
                 } else if (name === 'Enderpearl') {
                     extraInfo = `<br><span style="color:#88ff88; font-size:0.8em;">Teleports you to impact point</span>`;
                 }
@@ -2665,121 +2669,138 @@
         }
 
         function updateOtherPlayerItem(id, itemType) {
-            // Remove existing item
-            if (playerItems.has(id)) {
-                const oldItem = playerItems.get(id);
-                const op = otherPlayers.get(id);
-                if (op && op.group) {
-                    op.group.remove(oldItem);
-                }
-                playerItems.delete(id);
-            }
-            
-            if (!itemType) return;
-            
-            const op = otherPlayers.get(id);
-            if (!op || !op.group) return;
-            
-            let texture = null;
-            
-            // Map item types to textures
-            if (itemType === 'Wooden Sword') texture = woodenSwordTexture;
-            else if (itemType === 'Iron Sword') texture = ironSwordTexture;
-            else if (itemType === 'Emerald Sword') texture = emeraldSwordTexture;
-            else if (itemType === 'Axe') texture = axeTexture;
-            else if (itemType === 'Pickaxe') texture = pickaxeTexture;
-            else if (itemType === 'Enderpearl') texture = enderpearlTexture;
-            else if (itemType === 'Fireball') texture = fireballTexture;
-            else if (itemType === 'Wind Charge') texture = windchargeTexture;
-            else if (itemType === 'Grass') texture = grassTexture;
-            else if (itemType === 'Wood') texture = woodTexture;
-            else if (itemType === 'Stone') texture = stoneTexture;
-            else if (itemType === 'Obsidian') texture = obsidianTexture;
-            
-            // Check if this is a block (not a weapon, tool, or throwable item)
-            const blockData = BLOCK_TYPES[itemType];
-            const isBlock = blockData && !blockData.isWeapon && !blockData.isTool && !blockData.isItem;
-            
-            if (isBlock) {
-                // Create a cube for blocks
-                let material;
-                if (itemType === 'Grass' && grassTexture) {
-                    material = new THREE.MeshLambertMaterial({ map: grassTexture });
-                } else if (itemType === 'Wood' && woodTexture) {
-                    material = new THREE.MeshLambertMaterial({ map: woodTexture });
-                } else if (itemType === 'Stone' && stoneTexture) {
-                    material = new THREE.MeshLambertMaterial({ map: stoneTexture });
-                } else if (itemType === 'Obsidian' && obsidianTexture) {
-                    material = new THREE.MeshLambertMaterial({ map: obsidianTexture });
-                } else if (itemType === 'Glass') {
-                    material = new THREE.MeshLambertMaterial({ 
-                        color: blockData.color, 
-                        transparent: true, 
-                        opacity: 0.6 
-                    });
-                } else {
-                    material = new THREE.MeshLambertMaterial({ 
-                        color: blockData.color, 
-                        transparent: !!blockData.opacity, 
-                        opacity: blockData.opacity || 1 
-                    });
-                }
-                
-                const cube = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), material);
-                // CHANGED: Position in right hand
-                cube.position.set(-0.5, 0.35, 0);
-                cube.userData = { 
-                    type: 'item', 
-                    playerId: id, 
-                    itemType: itemType 
-                };
-                cube.isSprite = false; // Mark as not a sprite
-                
-                op.group.add(cube);
-                playerItems.set(id, cube);
-            } else if (texture) {
-                // Create sprite for weapons, tools, and throwable items
-                const material = new THREE.SpriteMaterial({ 
-                    map: texture,
-                    transparent: true,
-                    opacity: 0.9
-                });
-                
-                const item = new THREE.Sprite(material);
-                item.scale.set(0.4, 0.4, 1);
-                // CHANGED: Position in right hand
-                item.position.set(-0.5, 0.3, 0);
-                item.userData = { 
-                    type: 'item', 
-                    playerId: id, 
-                    itemType: itemType 
-                };
-                item.isSprite = true; // Mark as sprite
-                
-                op.group.add(item);
-                playerItems.set(id, item);
-            } else if (blockData) {
-                // Fallback: colored sprite for items without specific textures
-                const material = new THREE.SpriteMaterial({ 
-                    color: blockData.color,
-                    transparent: true,
-                    opacity: itemType === 'Glass' ? 0.8 : 0.9
-                });
-                const item = new THREE.Sprite(material);
-                item.scale.set(0.4, 0.4, 1);
-                // CHANGED: Position in right hand
-                item.position.set(-0.5, 0.3, 0);
-                item.userData = { 
-                    type: 'item', 
-                    playerId: id, 
-                    itemType: itemType 
-                };
-                item.isSprite = true; // Mark as sprite
-                
-                op.group.add(item);
-                playerItems.set(id, item);
-            }
+    // Remove existing item
+    if (playerItems.has(id)) {
+        const oldItem = playerItems.get(id);
+        const op = otherPlayers.get(id);
+        if (op && op.group) {
+            op.group.remove(oldItem);
         }
+        playerItems.delete(id);
+    }
+    
+    if (!itemType) return;
+    
+    const op = otherPlayers.get(id);
+    if (!op || !op.group) return;
+    
+    let texture = null;
+    
+    // Map item types to textures
+    if (itemType === 'Wooden Sword') texture = woodenSwordTexture;
+    else if (itemType === 'Iron Sword') texture = ironSwordTexture;
+    else if (itemType === 'Emerald Sword') texture = emeraldSwordTexture;
+    else if (itemType === 'Axe') texture = axeTexture;
+    else if (itemType === 'Pickaxe') texture = pickaxeTexture;
+    else if (itemType === 'Enderpearl') texture = enderpearlTexture;
+    else if (itemType === 'Fireball') texture = fireballTexture;
+    else if (itemType === 'Wind Charge') texture = windchargeTexture;
+    else if (itemType === 'Grass') texture = grassTexture;
+    else if (itemType === 'Wood') texture = woodTexture;
+    else if (itemType === 'Stone') texture = stoneTexture;
+    else if (itemType === 'Obsidian') texture = obsidianTexture;
+    
+    // Check if this is a block (not a weapon, tool, or throwable item)
+    const blockData = BLOCK_TYPES[itemType];
+    const isWeapon = blockData && blockData.isWeapon;
+    const isTool = blockData && blockData.isTool;
+    const isThrowableItem = blockData && blockData.isItem;
+    const isBlock = blockData && !isWeapon && !isTool && !isThrowableItem;
+    
+    if (isBlock) {
+        // Create a cube for blocks
+        let material;
+        if (itemType === 'Grass' && grassTexture) {
+            material = new THREE.MeshLambertMaterial({ map: grassTexture });
+        } else if (itemType === 'Wood' && woodTexture) {
+            material = new THREE.MeshLambertMaterial({ map: woodTexture });
+        } else if (itemType === 'Stone' && stoneTexture) {
+            material = new THREE.MeshLambertMaterial({ map: stoneTexture });
+        } else if (itemType === 'Obsidian' && obsidianTexture) {
+            material = new THREE.MeshLambertMaterial({ map: obsidianTexture });
+        } else if (itemType === 'Glass') {
+            material = new THREE.MeshLambertMaterial({ 
+                color: blockData.color, 
+                transparent: true, 
+                opacity: 0.6 
+            });
+        } else {
+            material = new THREE.MeshLambertMaterial({ 
+                color: blockData.color, 
+                transparent: !!blockData.opacity, 
+                opacity: blockData.opacity || 1 
+            });
+        }
+        
+        const cube = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), material);
+        // CHANGED: Position in right hand
+        cube.position.set(-0.5, 0.35, 0);
+        cube.userData = { 
+            type: 'item', 
+            playerId: id, 
+            itemType: itemType 
+        };
+        cube.isSprite = false; // Mark as not a sprite
+        
+        op.group.add(cube);
+        playerItems.set(id, cube);
+    } else if (texture) {
+        // Create sprite for weapons, tools, and throwable items
+        const material = new THREE.SpriteMaterial({ 
+            map: texture,
+            transparent: true,
+            opacity: 0.9
+        });
+        
+        const item = new THREE.Sprite(material);
+        
+        // CHANGED: Make weapons, tools, and throwable items 2x bigger
+        let scaleMultiplier = 1.0;
+        if (isWeapon || isTool || isThrowableItem) {
+            scaleMultiplier = 2.0; // 2x bigger for weapons, tools, and throwable items
+        }
+        
+        item.scale.set(0.4 * scaleMultiplier, 0.4 * scaleMultiplier, 1);
+        // CHANGED: Position in right hand - adjust Y position for larger items
+        item.position.set(-0.5, 0.3 * scaleMultiplier, 0);
+        item.userData = { 
+            type: 'item', 
+            playerId: id, 
+            itemType: itemType 
+        };
+        item.isSprite = true; // Mark as sprite
+        
+        op.group.add(item);
+        playerItems.set(id, item);
+    } else if (blockData) {
+        // Fallback: colored sprite for items without specific textures
+        const material = new THREE.SpriteMaterial({ 
+            color: blockData.color,
+            transparent: true,
+            opacity: itemType === 'Glass' ? 0.8 : 0.9
+        });
+        const item = new THREE.Sprite(material);
+        
+        // CHANGED: Make weapons, tools, and throwable items 2x bigger
+        let scaleMultiplier = 1.0;
+        if (isWeapon || isTool || isThrowableItem) {
+            scaleMultiplier = 2.0; // 2x bigger for weapons, tools, and throwable items
+        }
+        
+        item.scale.set(0.4 * scaleMultiplier, 0.4 * scaleMultiplier, 1);
+        // CHANGED: Position in right hand - adjust Y position for larger items
+        item.position.set(-0.5, 0.3 * scaleMultiplier, 0);
+        item.userData = { 
+            type: 'item', 
+            playerId: id, 
+            itemType: itemType 
+        };
+        item.isSprite = true; // Mark as sprite
+        
+        op.group.add(item);
+        playerItems.set(id, item);
+    }
+}
 
         function updatePlayerHealth(id, health) {
             playerHealth.set(id, health);
