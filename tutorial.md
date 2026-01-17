@@ -9,7 +9,8 @@ There are 2 main ways to play the game:
 1) offense - buy blocks and bridge to enemy bases to break their bed and eliminate them
 2) defense - stay at your base and put blocks around your bed which make it much harder to break
 
--------SHOP-------
+**SHOP**
+--------------
 To open the shop, click [B] to toggle it on and off.
 Once you have enough resources, click on an item which is lit up to buy it. (hint: you can see the resources you have at top left!)
 ![Image of shop](https://i.ibb.co/8nvH8Mj2/Screenshot-from-2026-01-17-17-02-55.png)
