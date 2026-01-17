@@ -10,7 +10,7 @@ There are 2 main ways to play the game:
 
 -------SHOP-------
 To open the shop, click [B] to toggle it on and off.
-Once you have enough resources, click on an item which is lit up to buy it.
+Once you have enough resources, click on an item which is lit up to buy it. (hint: you can see your resources at the top left!)
 ![Image of shop](https://i.ibb.co/8nvH8Mj2/Screenshot-from-2026-01-17-17-02-55.png)
 Some items cannot be bought with iron, you will have to bridge out to the other islands to gain different resources.
 
