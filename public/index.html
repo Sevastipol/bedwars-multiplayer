@@ -571,153 +571,6 @@
             checkHealthRegeneration();
         }
 
-        // --- Spectator Functions ---
-        function setSpectatorMode(spectator) {
-            isSpectator = spectator;
-            const indicator = document.getElementById('spectator-indicator');
-            
-            if (spectator) {
-                indicator.style.display = 'block';
-                document.getElementById('stats').style.display = 'none';
-                document.getElementById('health-container').style.display = 'none';
-                document.getElementById('hotbar-container').style.display = 'none';
-                document.getElementById('crosshair').style.display = 'none';
-                document.getElementById('controls-hint').style.display = 'none';
-                document.getElementById('break-progress').style.display = 'none';
-                document.getElementById('timer').style.display = 'none';
-                velocity.y = 0;
-                onGround = true;
-                
-                // Remove weapon/tool from hand
-                removeWeaponToolFromHand();
-                
-                if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
-                    setTimeout(() => {
-                        if (!controls.isLocked && !isShopOpen()) {
-                            controls.lock();
-                        }
-                    }, 100);
-                }
-            } else {
-                indicator.style.display = 'none';
-                document.getElementById('stats').style.display = 'block';
-                document.getElementById('health-container').style.display = 'block';
-                document.getElementById('hotbar-container').style.display = 'flex';
-                document.getElementById('crosshair').style.display = 'block';
-                document.getElementById('controls-hint').style.display = 'block';
-                if (isInRound) {
-                    document.getElementById('timer').style.display = 'block';
-                }
-                
-                // Update health display
-                updateHealthDisplay(playerHealth);
-                
-                // Update equipment in hand
-                updateEquipmentInHand();
-                
-                if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
-                    setTimeout(() => {
-                        if (!controls.isLocked && !isShopOpen()) {
-                            controls.lock();
-                        }
-                    }, 100);
-                }
-            }
-        }
-
-        // --- Fullscreen Functions ---
-        function enterFullscreen() {
-            const elem = document.documentElement;
-            if (elem.requestFullscreen) {
-                elem.requestFullscreen();
-            } else if (elem.webkitRequestFullscreen) {
-                elem.webkitRequestFullscreen();
-            } else if (elem.msRequestFullscreen) {
-                elem.msRequestFullscreen();
-            }
-            
-            document.getElementById('fullscreen-overlay').style.display = 'none';
-            
-            setTimeout(() => {
-                if (!controls.isLocked && !isShopOpen()) {
-                    controls.lock();
-                }
-            }, 500);
-        }
-
-        function isFullscreen() {
-            return document.fullscreenElement || 
-                   document.webkitFullscreenElement || 
-                   document.msFullscreenElement;
-        }
-
-        document.getElementById('enter-fullscreen').addEventListener('click', enterFullscreen);
-        
-        document.getElementById('fullscreen-overlay').addEventListener('click', (e) => {
-            if (e.target.id !== 'enter-fullscreen') {
-                enterFullscreen();
-            }
-        });
-
-        document.addEventListener('fullscreenchange', () => {
-            if (isFullscreen()) {
-                document.getElementById('fullscreen-overlay').style.display = 'none';
-            }
-        });
-
-        document.addEventListener('webkitfullscreenchange', () => {
-            if (isFullscreen()) {
-                document.getElementById('fullscreen-overlay').style.display = 'none';
-            }
-        });
-
-        // --- Timer Functions ---
-        function updateTimerDisplay(seconds) {
-            const timerElement = document.getElementById('timer');
-            const mins = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            timerElement.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-        }
-
-        function startRoundTimer(initialTime) {
-            roundTimeRemaining = initialTime;
-            updateTimerDisplay(roundTimeRemaining);
-            document.getElementById('timer').style.display = 'block';
-            
-            if (roundTimerInterval) clearInterval(roundTimerInterval);
-            
-            roundTimerInterval = setInterval(() => {
-                if (isInRound && roundTimeRemaining > 0) {
-                    roundTimeRemaining--;
-                    updateTimerDisplay(roundTimeRemaining);
-                    
-                    if (roundTimeRemaining <= 0) {
-                        clearInterval(roundTimerInterval);
-                        document.getElementById('timer').style.display = 'none';
-                    }
-                }
-            }, 1000);
-        }
-
-        function stopRoundTimer() {
-            if (roundTimerInterval) {
-                clearInterval(roundTimerInterval);
-                roundTimerInterval = null;
-            }
-            document.getElementById('timer').style.display = 'none';
-        }
-
-        // --- Waiting Message Function ---
-        function updateWaitingMessage(playersNeeded) {
-            const messageElement = document.getElementById('waiting-message');
-            if (playersNeeded > 0) {
-                messageElement.textContent = `Waiting for ${playersNeeded} more player${playersNeeded > 1 ? 's' : ''}...`;
-                messageElement.style.display = 'block';
-            } else {
-                messageElement.style.display = 'none';
-            }
-        }
-
         // --- Three.js Setup ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x6eb1ff);
@@ -1009,15 +862,13 @@
             if (fireballTexture) {
                 material = new THREE.SpriteMaterial({ 
                     map: fireballTexture,
-                    color: 0xFF5500
-,
+                    color: 0xFF5500,
                     opacity: 1.0,
                     transparent: true
                 });
             } else {
                 material = new THREE.SpriteMaterial({ 
-                    color: 0xFF5500
-,
+                    color: 0xFF5500,
                     opacity: 1.0,
                     transparent: true
                 });
@@ -1095,7 +946,7 @@
             
             const windcharge = new THREE.Sprite(material);
             windcharge.position.set(data.x, data.y, data.z);
-            windcharge.scale.set(0.4, 0.4, 1); // Smaller size like Minecraft
+            windcharge.scale.set(0.4, 0.4, 1);
             
             windcharge.userData = { 
                 id: data.id, 
@@ -1135,7 +986,6 @@
                     windcharge.position.set(windchargeData.x, windchargeData.y, windchargeData.z);
                 }
                 
-                // Rotate wind charge like Minecraft
                 windcharge.material.rotation += 0.15;
                 windcharge.material.needsUpdate = true;
             }
@@ -1150,22 +1000,20 @@
             }
         }
 
-        // Wind Charge explosion effect - Minecraft style
+        // Wind Charge explosion effect
         function createWindchargeEffect(x, y, z) {
-            // Main explosion particles
             const particleCount = 30;
             const explosionGroup = new THREE.Group();
             
             for (let i = 0; i < particleCount; i++) {
                 const geometry = new THREE.SphereGeometry(0.08, 6, 6);
                 const material = new THREE.MeshBasicMaterial({ 
-                    color: 0xaaddff, // Lighter blue color
+                    color: 0xaaddff,
                     transparent: true,
                     opacity: 0.9
                 });
                 const particle = new THREE.Mesh(geometry, material);
                 
-                // Random direction in all directions
                 const theta = Math.random() * Math.PI * 2;
                 const phi = Math.random() * Math.PI;
                 const speed = 1.5 + Math.random() * 2;
@@ -1182,7 +1030,6 @@
                 explosionGroup.add(particle);
             }
             
-            // Add small wind lines/circles
             const circleCount = 8;
             for (let i = 0; i < circleCount; i++) {
                 const radius = 0.1 + Math.random() * 0.2;
@@ -1205,7 +1052,7 @@
                     z + 0.5 + Math.sin(angle) * distance
                 );
                 
-                circle.rotation.x = Math.PI / 2; // Make it horizontal
+                circle.rotation.x = Math.PI / 2;
                 
                 circle.userData = {
                     life: 1.0,
@@ -1230,21 +1077,16 @@
                     if (object.userData.life > 0) {
                         allDead = false;
                         
-                        // Handle particles
                         if (object.userData.velocity) {
                             object.position.x += object.userData.velocity.x * 0.1;
                             object.position.y += object.userData.velocity.y * 0.1;
                             object.position.z += object.userData.velocity.z * 0.1;
                             object.material.opacity = object.userData.life;
                             object.scale.setScalar(object.userData.life * 0.5);
-                        }
-                        // Handle wind circles
-                        else {
+                        } else {
                             object.userData.scale += object.userData.expandSpeed * 0.1;
                             object.scale.setScalar(object.userData.scale);
                             object.material.opacity = object.userData.life;
-                            
-                            // Move upward slightly
                             object.position.y += 0.02;
                         }
                     }
@@ -1325,32 +1167,31 @@
         }
 
         // --- Weapon/Tool Functions ---
-       function createWeaponToolMesh(type) {
-    let texture = null;
-    
-    if (type === 'Wooden Sword') texture = woodenSwordTexture;
-    else if (type === 'Iron Sword') texture = ironSwordTexture;
-    else if (type === 'Emerald Sword') texture = emeraldSwordTexture;
-    else if (type === 'Axe') texture = axeTexture;
-    else if (type === 'Pickaxe') texture = pickaxeTexture;
-    
-    if (!texture) return null;
-    
-    const material = new THREE.SpriteMaterial({ 
-        map: texture,
-        transparent: true,
-        opacity: 0.9,
-        depthTest: false,
-        depthWrite: false
-    });
-    
-    const mesh = new THREE.Sprite(material);
-    // CHANGED: Make 2x bigger for weapons/tools
-    const scaleMultiplier = 1.0; // Base scale for weapons/tools
-    mesh.scale.set(0.5 * scaleMultiplier, 0.5 * scaleMultiplier, 1);
-    
-    return mesh;
-}
+        function createWeaponToolMesh(type) {
+            let texture = null;
+            
+            if (type === 'Wooden Sword') texture = woodenSwordTexture;
+            else if (type === 'Iron Sword') texture = ironSwordTexture;
+            else if (type === 'Emerald Sword') texture = emeraldSwordTexture;
+            else if (type === 'Axe') texture = axeTexture;
+            else if (type === 'Pickaxe') texture = pickaxeTexture;
+            
+            if (!texture) return null;
+            
+            const material = new THREE.SpriteMaterial({ 
+                map: texture,
+                transparent: true,
+                opacity: 0.9,
+                depthTest: false,
+                depthWrite: false
+            });
+            
+            const mesh = new THREE.Sprite(material);
+            const scaleMultiplier = 1.0;
+            mesh.scale.set(0.5 * scaleMultiplier, 0.5 * scaleMultiplier, 1);
+            
+            return mesh;
+        }
 
         function removeWeaponToolFromHand() {
             if (weaponToolInHand) {
@@ -1361,7 +1202,6 @@
         }
 
         function updateEquipmentInHand() {
-            // Remove existing equipment
             removeWeaponToolFromHand();
             
             if (isSpectator) return;
@@ -1373,7 +1213,6 @@
                 if (itemData.isWeapon || itemData.isTool) {
                     weaponToolInHand = createWeaponToolMesh(currentSlot.type);
                     if (weaponToolInHand) {
-                        // Attach to camera for first-person view
                         weaponToolInHand.position.set(2, -0.3, 2);
                         camera.add(weaponToolInHand);
                     }
@@ -1627,14 +1466,11 @@
             if (currentItem && BLOCK_TYPES[currentItem.type]?.isTool) {
                 const tool = BLOCK_TYPES[currentItem.type];
                 
-                // Axe breaks glass and wood faster
                 if (tool.toolType === 'axe') {
                     if (blockType === 'Glass' || blockType === 'Wood' || blockType === 'Bed'){
                         return baseBreakTime * tool.breakMultiplier;
                     }
-                }
-                // Pickaxe breaks stone and obsidian faster
-                else if (tool.toolType === 'pickaxe') {
+                } else if (tool.toolType === 'pickaxe') {
                     if (blockType === 'Stone' || blockType === 'Obsidian') {
                         return baseBreakTime * tool.breakMultiplier;
                     }
@@ -1797,7 +1633,6 @@
                         breakingBlock = obj;
                         breakingStartTime = Date.now();
                         
-                        // Calculate break time with tool multiplier
                         const currentSlot = inventory[selectedSlotIndex];
                         const breakTimeMultiplier = calculateBreakTime(type, currentSlot);
                         breakingDuration = breakTimeMultiplier * 1000;
@@ -1910,7 +1745,6 @@
                         return;
                     }
                     
-                    // Check if item can be placed
                     const blockData = BLOCK_TYPES[currentSlot.type];
                     if (blockData && (blockData.isItem || blockData.isWeapon || blockData.isTool)) {
                         socket.emit('notification', 'Cannot place items! Use Q to drop them.');
@@ -1919,7 +1753,7 @@
                     
                     const pos = intersect.point.clone().add(intersect.face.normal.multiplyScalar(0.5));
 
-                    const currentEyeHeightForFoot = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
+                    const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
                     const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
 
                     const blockX = Math.floor(pos.x);
@@ -1927,8 +1761,8 @@
                     const blockZ = Math.floor(pos.z);
 
                     let canPlace = true;
-                    const playerFeetY = camera.position.y - currentEyeHeightForFoot;
-                    const playerHeadY = camera.position.y - currentEyeHeightForFoot + currentPlayerHeight;
+                    const playerFeetY = camera.position.y - currentEyeHeight;
+                    const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
                     const blockMinY = blockY;
                     const blockMaxY = blockY + 1;
                     if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
@@ -1973,10 +1807,10 @@
         function checkCollision(pos) {
             if (isSpectator) return false;
             
-            const currentEyeHeightForFoot = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
+            const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
             const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
             const playerBox = new THREE.Box3().setFromCenterAndSize(
-                new THREE.Vector3(pos.x, pos.y - (currentEyeHeightForFoot - currentPlayerHeight/2), pos.z),
+                new THREE.Vector3(pos.x, pos.y - (currentEyeHeight - currentPlayerHeight/2), pos.z),
                 new THREE.Vector3(PLAYER_RADIUS * 2, currentPlayerHeight - 0.1, PLAYER_RADIUS * 2)
             );
             for (const b of blocksInScene) {
@@ -2028,7 +1862,6 @@
                 const bobAmount = Math.sin(swordBobTime) * 0.05;
                 weaponToolInHand.position.y = -0.3 + bobAmount;
                 
-                // Slight rotation for swinging effect when moving
                 if (moveState.fwd || moveState.bwd || moveState.l || moveState.r) {
                     weaponToolInHand.rotation.z = Math.sin(swordBobTime * 2) * 0.1;
                 } else {
@@ -2275,7 +2108,6 @@
                         }
                     }
                     
-                    // Rotate wind charge
                     windcharge.material.rotation += 0.15;
                     windcharge.material.needsUpdate = true;
                 }
@@ -2388,12 +2220,10 @@
                 
                 data.group.visible = true;
                 
-                // FIX: Properly position player model to avoid sinking
-                // The server sends eye position, but we need to position the feet
                 const eyeHeight = data.crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
                 const targetFeetPosition = {
                     x: data.targetPos.x,
-                    y: data.targetPos.y - eyeHeight + 0.9, // Adjust to place feet correctly
+                    y: data.targetPos.y - eyeHeight + 0.9,
                     z: data.targetPos.z
                 };
                 
@@ -2412,50 +2242,38 @@
                     data.healthBar.style.backgroundColor = health > 5 ? '#4CAF50' : health > 2 ? '#FFA500' : '#FF0000';
                 }
                 
-                // Update other players' item display with bobbing animation
                 if (playerItems.has(id)) {
                     const item = playerItems.get(id);
                     
-                    // Make item face the camera (for sprites only, not cubes)
                     if (item.isSprite) {
                         item.lookAt(camera.position);
                     }
                     
-                    // Add subtle bobbing animation when player is moving
                     const isMoving = data.group.position.distanceTo(data.lastPos || data.group.position) > 0.01;
                     if (isMoving) {
-                        // Bobbing animation
                         const bobOffset = Math.sin(time * 0.01) * 0.05;
                         
                         if (item.isSprite) {
-                            // For sprites (weapons, tools, throwables)
                             item.position.y = 0.3 + bobOffset;
                             item.rotation.z = Math.PI / 4 + Math.sin(time * 0.005) * 0.1;
                         } else {
-                            // For cubes (blocks)
                             item.position.y = 0.35 + bobOffset;
-                            // Add slight rotation to cubes when moving
                             item.rotation.y += delta * 2;
                             item.rotation.x = Math.sin(time * 0.01) * 0.1;
                         }
                     } else {
                         if (item.isSprite) {
-                            // For sprites
                             item.position.y = 0.3;
                             item.rotation.z = Math.PI / 4;
                         } else {
-                            // For cubes
                             item.position.y = 0.35;
-                            // Reset rotation when not moving
                             item.rotation.y = 0;
                             item.rotation.x = 0;
                         }
                     }
                     
-                    // Store last position for movement detection
                     data.lastPos = data.group.position.clone();
                     
-                    // Rotate texture for certain items
                     const userData = item.userData;
                     if (userData && (userData.itemType === 'Enderpearl' || 
                                     userData.itemType === 'Fireball' || 
@@ -2671,7 +2489,6 @@
             const group = new THREE.Group();
             group.name = id;
 
-            // Create player body parts
             const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
             const headMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
             const head = new THREE.Mesh(headGeo, headMat);
@@ -2705,7 +2522,6 @@
             rightLeg.position.set(-0.2, 0, 0);
             group.add(rightLeg);
 
-            // Name tag
             const canvas = document.createElement('canvas');
             canvas.width = 256;
             canvas.height = 64;
@@ -2745,7 +2561,6 @@
 
             playerHealth.set(id, health);
             
-            // Create item in hand if equipped
             if (equippedItem) {
                 updateOtherPlayerItem(id, equippedItem);
             }
@@ -2754,138 +2569,127 @@
         }
 
         function updateOtherPlayerItem(id, itemType) {
-    // Remove existing item
-    if (playerItems.has(id)) {
-        const oldItem = playerItems.get(id);
-        const op = otherPlayers.get(id);
-        if (op && op.group) {
-            op.group.remove(oldItem);
+            if (playerItems.has(id)) {
+                const oldItem = playerItems.get(id);
+                const op = otherPlayers.get(id);
+                if (op && op.group) {
+                    op.group.remove(oldItem);
+                }
+                playerItems.delete(id);
+            }
+            
+            if (!itemType) return;
+            
+            const op = otherPlayers.get(id);
+            if (!op || !op.group) return;
+            
+            let texture = null;
+            
+            if (itemType === 'Wooden Sword') texture = woodenSwordTexture;
+            else if (itemType === 'Iron Sword') texture = ironSwordTexture;
+            else if (itemType === 'Emerald Sword') texture = emeraldSwordTexture;
+            else if (itemType === 'Axe') texture = axeTexture;
+            else if (itemType === 'Pickaxe') texture = pickaxeTexture;
+            else if (itemType === 'Enderpearl') texture = enderpearlTexture;
+            else if (itemType === 'Fireball') texture = fireballTexture;
+            else if (itemType === 'Wind Charge') texture = windchargeTexture;
+            else if (itemType === 'Grass') texture = grassTexture;
+            else if (itemType === 'Wood') texture = woodTexture;
+            else if (itemType === 'Stone') texture = stoneTexture;
+            else if (itemType === 'Obsidian') texture = obsidianTexture;
+            
+            const blockData = BLOCK_TYPES[itemType];
+            const isWeapon = blockData && blockData.isWeapon;
+            const isTool = blockData && blockData.isTool;
+            const isThrowableItem = blockData && blockData.isItem;
+            const isBlock = blockData && !isWeapon && !isTool && !isThrowableItem;
+            
+            if (isBlock) {
+                let material;
+                if (itemType === 'Grass' && grassTexture) {
+                    material = new THREE.MeshLambertMaterial({ map: grassTexture });
+                } else if (itemType === 'Wood' && woodTexture) {
+                    material = new THREE.MeshLambertMaterial({ map: woodTexture });
+                } else if (itemType === 'Stone' && stoneTexture) {
+                    material = new THREE.MeshLambertMaterial({ map: stoneTexture });
+                } else if (itemType === 'Obsidian' && obsidianTexture) {
+                    material = new THREE.MeshLambertMaterial({ map: obsidianTexture });
+                } else if (itemType === 'Glass') {
+                    material = new THREE.MeshLambertMaterial({ 
+                        color: blockData.color, 
+                        transparent: true, 
+                        opacity: 0.6 
+                    });
+                } else {
+                    material = new THREE.MeshLambertMaterial({ 
+                        color: blockData.color, 
+                        transparent: !!blockData.opacity, 
+                        opacity: blockData.opacity || 1 
+                    });
+                }
+                
+                const cube = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), material);
+                cube.position.set(-0.5, 0.35, 0);
+                cube.userData = { 
+                    type: 'item', 
+                    playerId: id, 
+                    itemType: itemType 
+                };
+                cube.isSprite = false;
+                
+                op.group.add(cube);
+                playerItems.set(id, cube);
+            } else if (texture) {
+                const material = new THREE.SpriteMaterial({ 
+                    map: texture,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                
+                const item = new THREE.Sprite(material);
+                
+                let scaleMultiplier = 1.0;
+                if (isWeapon || isTool || isThrowableItem) {
+                    scaleMultiplier = 2.0;
+                }
+                
+                item.scale.set(0.4 * scaleMultiplier, 0.4 * scaleMultiplier, 1);
+                item.position.set(-0.5, 0.3 * scaleMultiplier, 0);
+                item.userData = { 
+                    type: 'item', 
+                    playerId: id, 
+                    itemType: itemType 
+                };
+                item.isSprite = true;
+                
+                op.group.add(item);
+                playerItems.set(id, item);
+            } else if (blockData) {
+                const material = new THREE.SpriteMaterial({ 
+                    color: blockData.color,
+                    transparent: true,
+                    opacity: itemType === 'Glass' ? 0.8 : 0.9
+                });
+                const item = new THREE.Sprite(material);
+                
+                let scaleMultiplier = 1.0;
+                if (isWeapon || isTool || isThrowableItem) {
+                    scaleMultiplier = 2.0;
+                }
+                
+                item.scale.set(0.4 * scaleMultiplier, 0.4 * scaleMultiplier, 1);
+                item.position.set(-0.5, 0.3 * scaleMultiplier, 0);
+                item.userData = { 
+                    type: 'item', 
+                    playerId: id, 
+                    itemType: itemType 
+                };
+                item.isSprite = true;
+                
+                op.group.add(item);
+                playerItems.set(id, item);
+            }
         }
-        playerItems.delete(id);
-    }
-    
-    if (!itemType) return;
-    
-    const op = otherPlayers.get(id);
-    if (!op || !op.group) return;
-    
-    let texture = null;
-    
-    // Map item types to textures
-    if (itemType === 'Wooden Sword') texture = woodenSwordTexture;
-    else if (itemType === 'Iron Sword') texture = ironSwordTexture;
-    else if (itemType === 'Emerald Sword') texture = emeraldSwordTexture;
-    else if (itemType === 'Axe') texture = axeTexture;
-    else if (itemType === 'Pickaxe') texture = pickaxeTexture;
-    else if (itemType === 'Enderpearl') texture = enderpearlTexture;
-    else if (itemType === 'Fireball') texture = fireballTexture;
-    else if (itemType === 'Wind Charge') texture = windchargeTexture;
-    else if (itemType === 'Grass') texture = grassTexture;
-    else if (itemType === 'Wood') texture = woodTexture;
-    else if (itemType === 'Stone') texture = stoneTexture;
-    else if (itemType === 'Obsidian') texture = obsidianTexture;
-    
-    // Check if this is a block (not a weapon, tool, or throwable item)
-    const blockData = BLOCK_TYPES[itemType];
-    const isWeapon = blockData && blockData.isWeapon;
-    const isTool = blockData && blockData.isTool;
-    const isThrowableItem = blockData && blockData.isItem;
-    const isBlock = blockData && !isWeapon && !isTool && !isThrowableItem;
-    
-    if (isBlock) {
-        // Create a cube for blocks
-        let material;
-        if (itemType === 'Grass' && grassTexture) {
-            material = new THREE.MeshLambertMaterial({ map: grassTexture });
-        } else if (itemType === 'Wood' && woodTexture) {
-            material = new THREE.MeshLambertMaterial({ map: woodTexture });
-        } else if (itemType === 'Stone' && stoneTexture) {
-            material = new THREE.MeshLambertMaterial({ map: stoneTexture });
-        } else if (itemType === 'Obsidian' && obsidianTexture) {
-            material = new THREE.MeshLambertMaterial({ map: obsidianTexture });
-        } else if (itemType === 'Glass') {
-            material = new THREE.MeshLambertMaterial({ 
-                color: blockData.color, 
-                transparent: true, 
-                opacity: 0.6 
-            });
-        } else {
-            material = new THREE.MeshLambertMaterial({ 
-                color: blockData.color, 
-                transparent: !!blockData.opacity, 
-                opacity: blockData.opacity || 1 
-            });
-        }
-        
-        const cube = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), material);
-        // CHANGED: Position in right hand
-        cube.position.set(-0.5, 0.35, 0);
-        cube.userData = { 
-            type: 'item', 
-            playerId: id, 
-            itemType: itemType 
-        };
-        cube.isSprite = false; // Mark as not a sprite
-        
-        op.group.add(cube);
-        playerItems.set(id, cube);
-    } else if (texture) {
-        // Create sprite for weapons, tools, and throwable items
-        const material = new THREE.SpriteMaterial({ 
-            map: texture,
-            transparent: true,
-            opacity: 0.9
-        });
-        
-        const item = new THREE.Sprite(material);
-        
-        // CHANGED: Make weapons, tools, and throwable items 2x bigger
-        let scaleMultiplier = 1.0;
-        if (isWeapon || isTool || isThrowableItem) {
-            scaleMultiplier = 2.0; // 2x bigger for weapons, tools, and throwable items
-        }
-        
-        item.scale.set(0.4 * scaleMultiplier, 0.4 * scaleMultiplier, 1);
-        // CHANGED: Position in right hand - adjust Y position for larger items
-        item.position.set(-0.5, 0.3 * scaleMultiplier, 0);
-        item.userData = { 
-            type: 'item', 
-            playerId: id, 
-            itemType: itemType 
-        };
-        item.isSprite = true; // Mark as sprite
-        
-        op.group.add(item);
-        playerItems.set(id, item);
-    } else if (blockData) {
-        // Fallback: colored sprite for items without specific textures
-        const material = new THREE.SpriteMaterial({ 
-            color: blockData.color,
-            transparent: true,
-            opacity: itemType === 'Glass' ? 0.8 : 0.9
-        });
-        const item = new THREE.Sprite(material);
-        
-        // CHANGED: Make weapons, tools, and throwable items 2x bigger
-        let scaleMultiplier = 1.0;
-        if (isWeapon || isTool || isThrowableItem) {
-            scaleMultiplier = 2.0; // 2x bigger for weapons, tools, and throwable items
-        }
-        
-        item.scale.set(0.4 * scaleMultiplier, 0.4 * scaleMultiplier, 1);
-        // CHANGED: Position in right hand - adjust Y position for larger items
-        item.position.set(-0.5, 0.3 * scaleMultiplier, 0);
-        item.userData = { 
-            type: 'item', 
-            playerId: id, 
-            itemType: itemType 
-        };
-        item.isSprite = true; // Mark as sprite
-        
-        op.group.add(item);
-        playerItems.set(id, item);
-    }
-}
 
         function updatePlayerHealth(id, health) {
             playerHealth.set(id, health);
@@ -2938,6 +2742,207 @@
             }, duration);
         }
 
+        // --- Spectator Functions ---
+        function setSpectatorMode(spectator) {
+            isSpectator = spectator;
+            const indicator = document.getElementById('spectator-indicator');
+            
+            if (spectator) {
+                indicator.style.display = 'block';
+                document.getElementById('stats').style.display = 'none';
+                document.getElementById('health-container').style.display = 'none';
+                document.getElementById('hotbar-container').style.display = 'none';
+                document.getElementById('crosshair').style.display = 'none';
+                document.getElementById('controls-hint').style.display = 'none';
+                document.getElementById('break-progress').style.display = 'none';
+                document.getElementById('timer').style.display = 'none';
+                velocity.y = 0;
+                onGround = true;
+                
+                removeWeaponToolFromHand();
+                
+                if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
+                    setTimeout(() => {
+                        if (!controls.isLocked && !isShopOpen()) {
+                            controls.lock();
+                        }
+                    }, 100);
+                }
+            } else {
+                indicator.style.display = 'none';
+                document.getElementById('stats').style.display = 'block';
+                document.getElementById('health-container').style.display = 'block';
+                document.getElementById('hotbar-container').style.display = 'flex';
+                document.getElementById('crosshair').style.display = 'block';
+                document.getElementById('controls-hint').style.display = 'block';
+                if (isInRound) {
+                    document.getElementById('timer').style.display = 'block';
+                }
+                
+                updateHealthDisplay(playerHealth);
+                
+                updateEquipmentInHand();
+                
+                if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
+                    setTimeout(() => {
+                        if (!controls.isLocked && !isShopOpen()) {
+                            controls.lock();
+                        }
+                    }, 100);
+                }
+            }
+        }
+
+        // --- Waiting Message Function ---
+        function updateWaitingMessage(playersNeeded) {
+            const messageElement = document.getElementById('waiting-message');
+            if (playersNeeded > 0) {
+                messageElement.textContent = `Waiting for ${playersNeeded} more player${playersNeeded > 1 ? 's' : ''}...`;
+                messageElement.style.display = 'block';
+            } else {
+                messageElement.style.display = 'none';
+            }
+        }
+
+        // --- Fullscreen Functions ---
+        function enterFullscreen() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen();
+            } else if (elem.webkitRequestFullscreen) {
+                elem.webkitRequestFullscreen();
+            } else if (elem.msRequestFullscreen) {
+                elem.msRequestFullscreen();
+            }
+            
+            document.getElementById('fullscreen-overlay').style.display = 'none';
+            
+            setTimeout(() => {
+                if (!controls.isLocked && !isShopOpen()) {
+                    controls.lock();
+                }
+            }, 500);
+        }
+
+        function isFullscreen() {
+            return document.fullscreenElement || 
+                   document.webkitFullscreenElement || 
+                   document.msFullscreenElement;
+        }
+
+        document.getElementById('enter-fullscreen').addEventListener('click', enterFullscreen);
+        
+        document.getElementById('fullscreen-overlay').addEventListener('click', (e) => {
+            if (e.target.id !== 'enter-fullscreen') {
+                enterFullscreen();
+            }
+        });
+
+        document.addEventListener('fullscreenchange', () => {
+            if (isFullscreen()) {
+                document.getElementById('fullscreen-overlay').style.display = 'none';
+            }
+        });
+
+        document.addEventListener('webkitfullscreenchange', () => {
+            if (isFullscreen()) {
+                document.getElementById('fullscreen-overlay').style.display = 'none';
+            }
+        });
+
+        // --- Timer Functions ---
+        function updateTimerDisplay(seconds) {
+            const timerElement = document.getElementById('timer');
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            timerElement.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+
+        function startRoundTimer(initialTime) {
+            roundTimeRemaining = initialTime;
+            updateTimerDisplay(roundTimeRemaining);
+            document.getElementById('timer').style.display = 'block';
+            
+            if (roundTimerInterval) clearInterval(roundTimerInterval);
+            
+            roundTimerInterval = setInterval(() => {
+                if (isInRound && roundTimeRemaining > 0) {
+                    roundTimeRemaining--;
+                    updateTimerDisplay(roundTimeRemaining);
+                    
+                    if (roundTimeRemaining <= 0) {
+                        clearInterval(roundTimerInterval);
+                        document.getElementById('timer').style.display = 'none';
+                    }
+                }
+            }, 1000);
+        }
+
+        function stopRoundTimer() {
+            if (roundTimerInterval) {
+                clearInterval(roundTimerInterval);
+                roundTimerInterval = null;
+            }
+            document.getElementById('timer').style.display = 'none';
+        }
+
+        // --- Config ---
+        const BLOCK_TYPES = {
+            'Grass': { color: 0x4d9043, cost: { iron: 5 }, breakTime: 1.2, buyAmount: 8, hasTexture: true },
+            'Glass': { color: 0xade8f4, cost: { iron: 5 }, breakTime: 0.4, buyAmount: 16, opacity: 0.6 },
+            'Wood': { color: 0x5d4037, cost: { gold: 5 }, breakTime: 3, buyAmount: 32, hasTexture: true },
+            'Stone': { color: 0x777777, cost: { gold: 5 }, breakTime: 6, buyAmount: 8, hasTexture: true },
+            'Obsidian': { color: 0x111111, cost: { emerald: 1 }, breakTime: 12, buyAmount: 1, hasTexture: true },
+            'Bed': { color: 0xff0000, breakTime: 0.8, buyAmount: 1, hasTexture: false },
+            'Enderpearl': { color: 0x00ff88, cost: { emerald: 2 }, buyAmount: 1, isItem: true, hasTexture: true },
+            'Fireball': { color: 0xff5500, cost: { iron: 48 }, buyAmount: 1, isItem: true, hasTexture: true },
+            'Wind Charge': { color: 0x88ccff, cost: { gold: 10 }, buyAmount: 1, isItem: true, hasTexture: true },
+            'Wooden Sword': { color: 0x8B4513, cost: { iron: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 2, hasTexture: true },
+            'Iron Sword': { color: 0xC0C0C0, cost: { gold: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 3, hasTexture: true },
+            'Emerald Sword': { color: 0x00FF00, cost: { emerald: 5 }, buyAmount: 1, isItem: true, isWeapon: true, damage: 4, hasTexture: true },
+            'Axe': { color: 0x8B4513, cost: { gold: 5 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'axe', breakMultiplier: 0.333, hasTexture: true },
+            'Pickaxe': { color: 0xC0C0C0, cost: { gold: 5 }, buyAmount: 1, isItem: true, isTool: true, toolType: 'pickaxe', breakMultiplier: 0.333, hasTexture: true }
+        };
+        const MAX_STACK = 64;
+        const INVENTORY_SIZE = 9;
+
+        // --- State ---
+        let currency = { iron: 0, gold: 0, emerald: 0 };
+        let inventory = new Array(INVENTORY_SIZE).fill(null);
+        let selectedSlotIndex = 0;
+        let overlayTimeout;
+
+        const blocksInScene = [];
+        const resourceSpawners = [];
+        const resourcePickups = [];
+        const projectiles = new Map();
+        const fireballProjectiles = new Map();
+        const windchargeProjectiles = new Map();
+        
+        const breakingOverlays = new Map();
+
+        let isBreaking = false;
+        let breakingBlock = null;
+        let breakingStartTime = 0;
+        let breakingDuration = 0;
+        let breakingOverlay = null;
+
+        let isCrouching = false;
+
+        let weaponToolInHand = null;
+
+        let playerId = null;
+        let blocksMeshes = new Map();
+        let pickupMeshes = new Map();
+        let otherPlayers = new Map();
+        let playerHealth = new Map();
+        let playerItems = new Map();
+
+        // Hide loading when connected
+        socket.on('connect', () => {
+            document.getElementById('loading').style.display = 'none';
+        });
+
         // Socket events
         socket.on('yourId', (id) => {
             playerId = id;
@@ -2964,12 +2969,10 @@
                 createOtherPlayer(id, health || 10, equippedItem);
                 const op = otherPlayers.get(id);
                 
-                // FIX: Properly position player model to avoid sinking
-                // The server sends eye position, but we need to position the feet
                 const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
                 op.targetPos = {
                     x: pos.x,
-                    y: pos.y - eyeHeight + 0.9, // Adjust to place feet correctly
+                    y: pos.y - eyeHeight + 0.9,
                     z: pos.z
                 };
                 op.targetRot = rot;
@@ -2984,12 +2987,10 @@
             createOtherPlayer(id, health || 10, equippedItem);
             const op = otherPlayers.get(id);
             
-            // FIX: Properly position player model to avoid sinking
-            // The server sends eye position, but we need to position the feet
             const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
             op.targetPos = {
                 x: pos.x,
-                y: pos.y - eyeHeight + 0.9, // Adjust to place feet correctly
+                y: pos.y - eyeHeight + 0.9,
                 z: pos.z
             };
             op.targetRot = rot;
@@ -3007,12 +3008,10 @@
                     op = otherPlayers.get(id);
                 }
                 if (op) {
-                    // FIX: Properly position player model to avoid sinking
-                    // The server sends eye position, but we need to position the feet
                     const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
                     op.targetPos = {
                         x: pos.x,
-                        y: pos.y - eyeHeight + 0.9, // Adjust to place feet correctly
+                        y: pos.y - eyeHeight + 0.9,
                         z: pos.z
                     };
                     op.targetRot = rot;
@@ -3054,7 +3053,6 @@
         socket.on('updateCurrency', (curr) => {
             currency = curr;
             updateUI();
-            // Refresh shop when currency updates
             if (isShopOpen()) {
                 renderShop();
             }
@@ -3071,6 +3069,24 @@
             showNotification('Not enough resources or inventory full!');
             renderShop();
             wasBuying = false;
+        });
+
+        // Health events
+        socket.on('updateHealth', (health) => {
+            updateHealthDisplay(health);
+        });
+
+        socket.on('playerHit', ({ attackerId, targetId, newHealth }) => {
+            updatePlayerHealth(targetId, newHealth);
+            
+            if (targetId === playerId && attackerId) {
+                showNotification(`You were hit! Health: ${newHealth}/10`, 2000);
+                onPlayerHit();
+            }
+            
+            if (targetId === playerId) {
+                updateHealthDisplay(newHealth);
+            }
         });
 
         // Enderpearl events
@@ -3166,7 +3182,6 @@
             camera.rotation.set(data.rot.pitch, data.rot.yaw, 0);
             velocity.set(0, 0, 0);
             
-            // Reset health regeneration tracking
             lastHitTime = Date.now();
             checkHealthRegeneration();
         });
@@ -3176,7 +3191,6 @@
             velocity.set(0, 0, 0);
             showNotification('Teleported!', 1500);
             
-            // Sync position immediately with server
             if (!isSpectator) {
                 socket.emit('playerUpdate', {
                     pos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
@@ -3221,7 +3235,6 @@
             updateUI();
             updateEquipmentInHand();
             
-            // Reset health regeneration tracking
             lastHitTime = Date.now();
             checkHealthRegeneration();
         });
@@ -3319,7 +3332,6 @@
         socket.on('setSpectator', (spectator) => {
             setSpectatorMode(spectator);
             if (!spectator) {
-                // Reset health regeneration tracking when entering game
                 lastHitTime = Date.now();
                 checkHealthRegeneration();
             }
@@ -3339,21 +3351,6 @@
             }
         });
 
-        // Player combat events
-        socket.on('playerHit', ({ attackerId, targetId, newHealth }) => {
-            updatePlayerHealth(targetId, newHealth);
-            
-            if (targetId === playerId && attackerId) {
-                showNotification(`You were hit! Health: ${newHealth}/10`, 2000);
-                onPlayerHit(); // Track when player was hit
-            }
-            
-            // Also update own health display if we were hit
-            if (targetId === playerId) {
-                updateHealthDisplay(newHealth);
-            }
-        });
-
         socket.on('playerEliminated', ({ eliminatedId, eliminatorId }) => {
             if (eliminatedId === playerId) {
                 showNotification('You were eliminated!', 3000);
@@ -3364,11 +3361,6 @@
             }
             
             removeOtherPlayer(eliminatedId);
-        });
-
-        // New health update event
-        socket.on('updateHealth', (health) => {
-            updateHealthDisplay(health);
         });
 
         // Start
