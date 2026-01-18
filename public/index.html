@@ -3297,7 +3297,7 @@
             }
         });
 
-        // Player combat events
+        // Player e events
         socket.on('playerHit', ({ attackerId, targetId, newHealth }) => {
             updatePlayerHealth(targetId, newHealth);
             
