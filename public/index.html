@@ -2652,7 +2652,7 @@ const headMaterials = [
     new THREE.MeshLambertMaterial({ color: skinColor }), // top
     new THREE.MeshLambertMaterial({ color: skinColor }), // bottom
     new THREE.MeshLambertMaterial({ color: skinColor }), // front (skin only, no eyes)
-    eyeTexture ? new THREE.MeshLambertMaterial({ map: eyeTexture }) :
+    eyeTexture ? new THREE.MeshLambertMaterial({ map: eyeTexture, color: skinColor }) :
         new THREE.MeshLambertMaterial({ color: skinColor })
 ];
 
