@@ -664,8 +664,8 @@
         let pickaxeTexture = null;
         let breakingTextures = [];
 
-        // Eye textures
-        let eyeTextures = [];
+        // Eye textures array
+        const eyeTextures = [];
 
         // Texture URLs
         const TEXTURE_URLS = {
@@ -685,14 +685,6 @@
             axe: 'https://i.ibb.co/MDqY0ZM2/pixil-frame-0-13.png',
             pickaxe: 'https://i.ibb.co/MvmWrKG/pixil-frame-0-15.png'
         };
-
-        // Eye texture URLs
-        const EYE_TEXTURE_URLS = [
-            'https://i.ibb.co/pvgrCqyD/pixil-frame-0.png',
-            'https://i.ibb.co/0yPBr5Bd/pixil-frame-0-1.png',
-            'https://i.ibb.co/nd5x9Tt/pixil-frame-0-2.png',
-            'https://i.ibb.co/pvByQySh/pixil-frame-0-4.png'
-        ];
 
         // Load textures
         textureLoader.load(TEXTURE_URLS.grass, (texture) => {
@@ -794,7 +786,14 @@
         });
 
         // Load eye textures
-        EYE_TEXTURE_URLS.forEach(url => {
+        const eyeTextureUrls = [
+            'https://i.ibb.co/pvgrCqyD/pixil-frame-0.png',
+            'https://i.ibb.co/0yPBr5Bd/pixil-frame-0-1.png',
+            'https://i.ibb.co/nd5x9Tt/pixil-frame-0-2.png',
+            'https://i.ibb.co/pvByQySh/pixil-frame-0-4.png'
+        ];
+
+        eyeTextureUrls.forEach(url => {
             textureLoader.load(url, (texture) => {
                 texture.magFilter = THREE.NearestFilter;
                 texture.minFilter = THREE.NearestFilter;
@@ -2323,13 +2322,8 @@
                 data.group.visible = true;
                 
                 // Make sure eyes look at camera
-                if (data.head) {
-                    data.head.children.forEach(child => {
-                        if (child instanceof THREE.Sprite) {
-                            // This is the eyes sprite
-                            child.lookAt(camera.position);
-                        }
-                    });
+                if (data.head && eyeTextures.length > 0 && data.head.material.map) {
+                    // Head already has eye texture applied
                 }
                 
                 // FIX: Properly position player model to avoid sinking
@@ -2615,50 +2609,42 @@
             const group = new THREE.Group();
             group.name = id;
 
-            // Create player body parts
+            // Create player body parts with eye texture on front face
+            const bodyColor = getPlayerColor(id);
+            
+            // Create head with eye texture on front face
             const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-            const headMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
-            const head = new THREE.Mesh(headGeo, headMat);
+            
+            // Create materials for each face of the head cube
+            const skinMaterial = new THREE.MeshLambertMaterial({ color: 0xffdbac });
+            
+            // Select random eye texture
+            let eyeTexture = null;
+            if (eyeTextures.length > 0) {
+                eyeTexture = eyeTextures[Math.floor(Math.random() * eyeTextures.length)];
+            }
+            
+            // Create eye material
+            const eyeMaterial = eyeTexture ? 
+                new THREE.MeshLambertMaterial({ map: eyeTexture }) :
+                new THREE.MeshLambertMaterial({ color: 0x000000 });
+            
+            // Create array of materials for each face (BoxGeometry has 6 faces)
+            // Face order: right, left, top, bottom, front, back
+            const headMaterials = [
+                skinMaterial, // right
+                skinMaterial, // left
+                skinMaterial, // top
+                skinMaterial, // bottom
+                eyeMaterial,  // front (eyes)
+                skinMaterial  // back
+            ];
+            
+            const head = new THREE.Mesh(headGeo, headMaterials);
             head.position.y = 1.4;
             group.add(head);
 
-            // Add eyes to the front of the head - FIXED VERSION
-            if (eyeTextures.length > 0) {
-                // Pick a random eye texture for this player
-                const randomEyeIndex = Math.floor(Math.random() * eyeTextures.length);
-                const eyeTexture = eyeTextures[randomEyeIndex];
-                
-                // Create a plane geometry for the eyes (not a sprite)
-                const eyeGeometry = new THREE.PlaneGeometry(0.5, 0.25);
-                
-                // Create eye material with the texture
-                const eyeMaterial = new THREE.MeshBasicMaterial({ 
-                    map: eyeTexture,
-                    transparent: true,
-                    opacity: 1.0,
-                    side: THREE.DoubleSide
-                });
-                
-                // Create eye mesh
-                const eyes = new THREE.Mesh(eyeGeometry, eyeMaterial);
-                
-                // Position eyes on the front of the head
-                // Head is 0.6x0.6x0.6, centered at (0,0,0) in head's local space
-                // Place eyes at the front face (z = 0.31, just in front of the head)
-                eyes.position.set(0, 0, 0.31);
-                
-                // Rotate to face forward (plane faces -Z by default, so rotate to face +Z)
-                eyes.rotation.y = Math.PI; // Face forward
-                
-                // Scale eyes appropriately
-                eyes.scale.set(1, 1, 1);
-                
-                // Add eyes to the head (so they move with head rotations)
-                head.add(eyes);
-            }
-
             const bodyGeo = new THREE.BoxGeometry(0.6, 0.8, 0.3);
-            const bodyColor = getPlayerColor(id);
             const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
             const body = new THREE.Mesh(bodyGeo, bodyMat);
             body.position.y = 0.7;
