@@ -664,6 +664,9 @@
         let pickaxeTexture = null;
         let breakingTextures = [];
 
+        // Eye textures
+        let eyeTextures = [];
+
         // Texture URLs
         const TEXTURE_URLS = {
             grass: 'https://i.ibb.co/394nfmMz/pixilart-drawing-3.png',
@@ -680,7 +683,12 @@
             ironSword: 'https://i.ibb.co/F4NZLPzj/pixil-frame-0-11.png',
             emeraldSword: 'https://i.ibb.co/przKkdMP/pixil-frame-0-12.png',
             axe: 'https://i.ibb.co/MDqY0ZM2/pixil-frame-0-13.png',
-            pickaxe: 'https://i.ibb.co/MvmWrKG/pixil-frame-0-15.png'
+            pickaxe: 'https://i.ibb.co/MvmWrKG/pixil-frame-0-15.png',
+            // Eye textures
+            eye1: 'https://i.ibb.co/pvgrCqyD/pixil-frame-0.png',
+            eye2: 'https://i.ibb.co/0yPBr5Bd/pixil-frame-0-1.png',
+            eye3: 'https://i.ibb.co/nd5x9Tt/pixil-frame-0-2.png',
+            eye4: 'https://i.ibb.co/pvByQySh/pixil-frame-0-4.png'
         };
 
         // Load textures
@@ -780,6 +788,31 @@
             texture.magFilter = THREE.NearestFilter;
             texture.minFilter = THREE.NearestFilter;
             pickaxeTexture = texture;
+        });
+
+        // Load eye textures
+        textureLoader.load(TEXTURE_URLS.eye1, (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            eyeTextures.push(texture);
+        });
+
+        textureLoader.load(TEXTURE_URLS.eye2, (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            eyeTextures.push(texture);
+        });
+
+        textureLoader.load(TEXTURE_URLS.eye3, (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            eyeTextures.push(texture);
+        });
+
+        textureLoader.load(TEXTURE_URLS.eye4, (texture) => {
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            eyeTextures.push(texture);
         });
 
         // Load breaking textures
@@ -924,15 +957,13 @@
             if (fireballTexture) {
                 material = new THREE.SpriteMaterial({ 
                     map: fireballTexture,
-                    color: 0xa4a6a5
-,
+                    color: 0xa4a6a5,
                     opacity: 1.0,
                     transparent: true
                 });
             } else {
                 material = new THREE.SpriteMaterial({ 
-                    color: 0xa4a6a5
-,
+                    color: 0xa4a6a5,
                     opacity: 1.0,
                     transparent: true
                 });
@@ -1834,7 +1865,7 @@
                     
                     const pos = intersect.point.clone().add(intersect.face.normal.multiplyScalar(0.5));
 
-                    const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
+                    const currentEyeHeightForFoot = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
                     const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
 
                     const blockX = Math.floor(pos.x);
@@ -1842,8 +1873,8 @@
                     const blockZ = Math.floor(pos.z);
 
                     let canPlace = true;
-                    const playerFeetY = camera.position.y - currentEyeHeight;
-                    const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
+                    const playerFeetY = camera.position.y - currentEyeHeightForFoot;
+                    const playerHeadY = camera.position.y - currentEyeHeightForFoot + currentPlayerHeight;
                     const blockMinY = blockY;
                     const blockMaxY = blockY + 1;
                     if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
@@ -2295,6 +2326,7 @@
                 lastPlayerUpdate = time;
             }
 
+            // Update eyes to look at camera
             otherPlayers.forEach((data, id) => {
                 if (data.spectator) {
                     data.group.visible = false;
@@ -2302,6 +2334,16 @@
                 }
                 
                 data.group.visible = true;
+                
+                // Make sure eyes look at camera
+                if (data.head) {
+                    data.head.children.forEach(child => {
+                        if (child instanceof THREE.Sprite) {
+                            // This is the eyes sprite
+                            child.lookAt(camera.position);
+                        }
+                    });
+                }
                 
                 // FIX: Properly position player model to avoid sinking
                 // The server sends eye position, but we need to position the feet
@@ -2592,6 +2634,35 @@
             const head = new THREE.Mesh(headGeo, headMat);
             head.position.y = 1.4;
             group.add(head);
+
+            // Add eyes to the front of the head
+            if (eyeTextures.length > 0) {
+                // Pick a random eye texture for this player
+                const randomEyeIndex = Math.floor(Math.random() * eyeTextures.length);
+                const eyeTexture = eyeTextures[randomEyeIndex];
+                
+                // Create eye material
+                const eyeMaterial = new THREE.SpriteMaterial({ 
+                    map: eyeTexture,
+                    transparent: true,
+                    opacity: 1.0,
+                    depthTest: false
+                });
+                
+                // Create eye sprite - make it slightly in front of the head
+                const eyes = new THREE.Sprite(eyeMaterial);
+                
+                // Position eyes on the front of the head (Z+ direction)
+                // The head is 0.6x0.6x0.6, centered at (0,0,0) in head's local space
+                // Place eyes at z = 0.301 (just in front of the head's front face)
+                eyes.position.set(0, 0, 0.301);
+                
+                // Scale eyes appropriately for the head size
+                eyes.scale.set(0.5, 0.25, 1); // Width, height
+                
+                // Add eyes to the head (not the group, so they move with head rotations)
+                head.add(eyes);
+            }
 
             const bodyGeo = new THREE.BoxGeometry(0.6, 0.8, 0.3);
             const bodyColor = getPlayerColor(id);
