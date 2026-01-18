@@ -790,28 +790,36 @@
             pickaxeTexture = texture;
         });
 
-        // Load eye textures
+        // Load eye textures with proper settings
         textureLoader.load(TEXTURE_URLS.eye1, (texture) => {
             texture.magFilter = THREE.NearestFilter;
             texture.minFilter = THREE.NearestFilter;
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
             eyeTextures.push(texture);
         });
 
         textureLoader.load(TEXTURE_URLS.eye2, (texture) => {
             texture.magFilter = THREE.NearestFilter;
             texture.minFilter = THREE.NearestFilter;
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
             eyeTextures.push(texture);
         });
 
         textureLoader.load(TEXTURE_URLS.eye3, (texture) => {
             texture.magFilter = THREE.NearestFilter;
             texture.minFilter = THREE.NearestFilter;
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
             eyeTextures.push(texture);
         });
 
         textureLoader.load(TEXTURE_URLS.eye4, (texture) => {
             texture.magFilter = THREE.NearestFilter;
             texture.minFilter = THREE.NearestFilter;
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
             eyeTextures.push(texture);
         });
 
@@ -2326,7 +2334,7 @@
                 lastPlayerUpdate = time;
             }
 
-            // Update eyes to look at camera
+            // Update other players
             otherPlayers.forEach((data, id) => {
                 if (data.spectator) {
                     data.group.visible = false;
@@ -2334,16 +2342,6 @@
                 }
                 
                 data.group.visible = true;
-                
-                // Make sure eyes look at camera
-                if (data.head) {
-                    data.head.children.forEach(child => {
-                        if (child instanceof THREE.Sprite) {
-                            // This is the eyes sprite
-                            child.lookAt(camera.position);
-                        }
-                    });
-                }
                 
                 // FIX: Properly position player model to avoid sinking
                 // The server sends eye position, but we need to position the feet
@@ -2529,7 +2527,6 @@
                     count.className = 'slot-count';
                     count.innerText = slot.count;
                     div.appendChild(count);
-
                 }
 
                 hotbarContainer.appendChild(div);
@@ -2629,56 +2626,35 @@
             const group = new THREE.Group();
             group.name = id;
 
-            // Create head mesh first
+            // Create head mesh with eye texture on front face
             const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
             
-            // Create face texture for head
-            const faceCanvas = document.createElement('canvas');
-            faceCanvas.width = 64;
-            faceCanvas.height = 64;
-            const faceContext = faceCanvas.getContext('2d');
-            
-            // Fill with skin color
-            faceContext.fillStyle = '#ffdbac';
-            faceContext.fillRect(0, 0, 64, 64);
-            
-            // Load and apply eye texture if available
+            // Pick a random eye texture for this player
+            let eyeTexture = null;
             if (eyeTextures.length > 0) {
-                // Pick a random eye texture for this player
                 const randomEyeIndex = Math.floor(Math.random() * eyeTextures.length);
-                const eyeTexture = eyeTextures[randomEyeIndex];
-                
-                // Create an image element from the texture
-                const eyeImage = new Image();
-                eyeImage.src = eyeTexture.image.currentSrc || eyeTexture.image.src;
-                
-                eyeImage.onload = function() {
-                    // Draw the eye texture onto the face canvas
-                    // Position eyes on the front face of the head
-                    faceContext.drawImage(eyeImage, 16, 20, 32, 16);
-                    
-                    // Update the texture
-                    faceTexture.needsUpdate = true;
-                };
-            } else {
-                // Fallback: draw simple eyes
-                faceContext.fillStyle = '#000000';
-                faceContext.fillRect(20, 24, 8, 8);
-                faceContext.fillRect(36, 24, 8, 8);
+                eyeTexture = eyeTextures[randomEyeIndex];
             }
             
-            const faceTexture = new THREE.CanvasTexture(faceCanvas);
-            faceTexture.magFilter = THREE.NearestFilter;
-            faceTexture.minFilter = THREE.NearestFilter;
+            // Create materials for each face of the head cube
+            // For a BoxGeometry in Three.js, the material indices are:
+            // 0: right (x+)
+            // 1: left (x-)
+            // 2: top (y+)
+            // 3: bottom (y-)
+            // 4: front (z+)
+            // 5: back (z-)
             
-            // Create materials for each face of the head
+            const skinColor = 0xffdbac;
             const headMaterials = [
-                new THREE.MeshLambertMaterial({ map: faceTexture, color: 0xffdbac }), // Right face
-                new THREE.MeshLambertMaterial({ map: faceTexture, color: 0xffdbac }), // Left face
-                new THREE.MeshLambertMaterial({ color: 0xffdbac }), // Top face
-                new THREE.MeshLambertMaterial({ color: 0xffdbac }), // Bottom face
-                new THREE.MeshLambertMaterial({ color: 0xffdbac }), // Back face
-                new THREE.MeshLambertMaterial({ map: faceTexture, color: 0xffdbac }) // Front face (with eyes)
+                new THREE.MeshLambertMaterial({ color: skinColor }), // right
+                new THREE.MeshLambertMaterial({ color: skinColor }), // left
+                new THREE.MeshLambertMaterial({ color: skinColor }), // top
+                new THREE.MeshLambertMaterial({ color: skinColor }), // bottom
+                eyeTexture ? 
+                    new THREE.MeshLambertMaterial({ map: eyeTexture, color: skinColor }) : // front with eye texture
+                    new THREE.MeshLambertMaterial({ color: skinColor }), // front without texture fallback
+                new THREE.MeshLambertMaterial({ color: skinColor }) // back
             ];
             
             const head = new THREE.Mesh(headGeo, headMaterials);
@@ -2747,8 +2723,7 @@
                 spectator: false,
                 healthBar: null,
                 equippedItem: equippedItem,
-                lastPos: null,
-                faceTexture: faceTexture
+                lastPos: null
             });
 
             playerHealth.set(id, health);
@@ -2826,7 +2801,7 @@
                 }
                 
                 const cube = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), material);
-                // CHANGED: Position in right hand
+                // Position in right hand
                 cube.position.set(-0.5, 0.35, 0);
                 cube.userData = { 
                     type: 'item', 
@@ -2847,14 +2822,14 @@
                 
                 const item = new THREE.Sprite(material);
                 
-                // CHANGED: Make weapons, tools, and throwable items 2x bigger
+                // Make weapons, tools, and throwable items 2x bigger
                 let scaleMultiplier = 1.0;
                 if (isWeapon || isTool || isThrowableItem) {
                     scaleMultiplier = 2.0; // 2x bigger for weapons, tools, and throwable items
                 }
                 
                 item.scale.set(0.4 * scaleMultiplier, 0.4 * scaleMultiplier, 1);
-                // CHANGED: Position in right hand - adjust Y position for larger items
+                // Position in right hand - adjust Y position for larger items
                 item.position.set(-0.5, 0.3 * scaleMultiplier, 0);
                 item.userData = { 
                     type: 'item', 
@@ -2874,14 +2849,14 @@
                 });
                 const item = new THREE.Sprite(material);
                 
-                // CHANGED: Make weapons, tools, and throwable items 2x bigger
+                // Make weapons, tools, and throwable items 2x bigger
                 let scaleMultiplier = 1.0;
                 if (isWeapon || isTool || isThrowableItem) {
                     scaleMultiplier = 2.0; // 2x bigger for weapons, tools, and throwable items
                 }
                 
                 item.scale.set(0.4 * scaleMultiplier, 0.4 * scaleMultiplier, 1);
-                // CHANGED: Position in right hand - adjust Y position for larger items
+                // Position in right hand - adjust Y position for larger items
                 item.position.set(-0.5, 0.3 * scaleMultiplier, 0);
                 item.userData = { 
                     type: 'item', 
