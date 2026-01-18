@@ -2645,17 +2645,18 @@
             // 4: front (z+)
             // 5: back (z-)
             
-            const skinColor = 0xffdbac;
-            const headMaterials = [
-                new THREE.MeshLambertMaterial({ color: skinColor }), // right
-                new THREE.MeshLambertMaterial({ color: skinColor }), // left
-                new THREE.MeshLambertMaterial({ color: skinColor }), // top
-                new THREE.MeshLambertMaterial({ color: skinColor }), // bottom
-                eyeTexture ? 
-                    new THREE.MeshLambertMaterial({ map: eyeTexture, color: skinColor }) : // front with eye texture
-                    new THREE.MeshLambertMaterial({ color: skinColor }), // front without texture fallback
-                new THREE.MeshLambertMaterial({ color: skinColor }) // back
-            ];
+           const skinColor = 0xffdbac;
+const headMaterials = [
+    new THREE.MeshLambertMaterial({ color: skinColor }), // right
+    new THREE.MeshLambertMaterial({ color: skinColor }), // left
+    new THREE.MeshLambertMaterial({ color: skinColor }), // top
+    new THREE.MeshLambertMaterial({ color: skinColor }), // bottom
+    new THREE.MeshLambertMaterial({ color: skinColor }), // front (skin only, no eyes)
+    eyeTexture ? 
+        new THREE.MeshLambertMaterial({ map: eyeTexture, color: skinColor }) : // back with eye texture
+        new THREE.MeshLambertMaterial({ color: skinColor }) // back without texture fallback
+];
+
             
             const head = new THREE.Mesh(headGeo, headMaterials);
             head.position.y = 1.4;
