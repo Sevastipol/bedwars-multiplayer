@@ -2326,7 +2326,6 @@
                 lastPlayerUpdate = time;
             }
 
-            // Update eyes to look at camera
             otherPlayers.forEach((data, id) => {
                 if (data.spectator) {
                     data.group.visible = false;
@@ -2334,16 +2333,6 @@
                 }
                 
                 data.group.visible = true;
-                
-                // Make sure eyes look at camera
-                if (data.head) {
-                    data.head.children.forEach(child => {
-                        if (child instanceof THREE.Sprite) {
-                            // This is the eyes sprite
-                            child.lookAt(camera.position);
-                        }
-                    });
-                }
                 
                 // FIX: Properly position player model to avoid sinking
                 // The server sends eye position, but we need to position the feet
@@ -2629,40 +2618,36 @@
             group.name = id;
 
             // Create player body parts
+            
+            // For the head, we'll create a custom material array with the eye texture on the front face
             const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-            const headMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
-            const head = new THREE.Mesh(headGeo, headMat);
+            
+            // Pick a random eye texture for this player
+            let eyeTexture = null;
+            if (eyeTextures.length > 0) {
+                const randomEyeIndex = Math.floor(Math.random() * eyeTextures.length);
+                eyeTexture = eyeTextures[randomEyeIndex];
+            }
+            
+            // Create materials for each face of the cube
+            const headMaterials = [
+                // Right face (skin)
+                new THREE.MeshLambertMaterial({ color: 0xffdbac }),
+                // Left face (skin)
+                new THREE.MeshLambertMaterial({ color: 0xffdbac }),
+                // Top face (skin)
+                new THREE.MeshLambertMaterial({ color: 0xffdbac }),
+                // Bottom face (skin)
+                new THREE.MeshLambertMaterial({ color: 0xffdbac }),
+                // Front face (with eyes texture if available, otherwise skin)
+                eyeTexture ? new THREE.MeshLambertMaterial({ map: eyeTexture }) : new THREE.MeshLambertMaterial({ color: 0xffdbac }),
+                // Back face (skin)
+                new THREE.MeshLambertMaterial({ color: 0xffdbac })
+            ];
+            
+            const head = new THREE.Mesh(headGeo, headMaterials);
             head.position.y = 1.4;
             group.add(head);
-
-            // Add eyes to the front of the head
-            if (eyeTextures.length > 0) {
-                // Pick a random eye texture for this player
-                const randomEyeIndex = Math.floor(Math.random() * eyeTextures.length);
-                const eyeTexture = eyeTextures[randomEyeIndex];
-                
-                // Create eye material
-                const eyeMaterial = new THREE.SpriteMaterial({ 
-                    map: eyeTexture,
-                    transparent: true,
-                    opacity: 1.0,
-                    depthTest: false
-                });
-                
-                // Create eye sprite - make it slightly in front of the head
-                const eyes = new THREE.Sprite(eyeMaterial);
-                
-                // Position eyes on the front of the head (Z+ direction)
-                // The head is 0.6x0.6x0.6, centered at (0,0,0) in head's local space
-                // Place eyes at z = 0.301 (just in front of the head's front face)
-                eyes.position.set(0, 0, 0.301);
-                
-                // Scale eyes appropriately for the head size
-                eyes.scale.set(0.6, 0.6, 0.6); // Width, height
-                
-                // Add eyes to the head (not the group, so they move with head rotations)
-                head.add(eyes);
-            }
 
             const bodyGeo = new THREE.BoxGeometry(0.6, 0.8, 0.3);
             const bodyColor = getPlayerColor(id);
