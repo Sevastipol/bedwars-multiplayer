@@ -45,20 +45,62 @@
 
         #stats {
             position: absolute;
-            top: 80px;
-            left: 20px;
+            top: 20px;
+            right: 20px;
             color: white;
             background: rgba(0,0,0,0.5);
             padding: 15px;
             border-radius: 10px;
             pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 150px;
+        }
+
+        #health-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+
+        #health-bar-container {
+            width: 100px;
+            height: 10px;
+            background: #555;
+            border: 2px solid #333;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        #health-bar {
+            width: 100%;
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.3s;
+        }
+
+        #health-text {
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px black;
+        }
+
+        #regen-indicator {
+            color: #88ff88;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.5s;
         }
 
         .currency-row {
             display: flex;
             align-items: center;
             gap: 8px;
-            margin: 5px 0;
+            margin: 2px 0;
             font-size: 1.2em;
             font-weight: bold;
         }
@@ -219,12 +261,16 @@
 
         #controls-hint {
             position: absolute;
-            top: 20px;
-            right: 20px;
+            bottom: 20px;
+            left: 20px;
             color: #ccc;
             font-size: 12px;
-            text-align: right;
+            text-align: left;
             text-shadow: 1px 1px 2px black;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 250px;
         }
 
         .crouch-indicator {
@@ -367,7 +413,16 @@
     <!-- Game Elements -->
     <div id="loading">Connecting to server...</div>
     <div id="crosshair"></div>
+    
+    <!-- Health and Stats Display (Minecraft-style on right) -->
     <div id="stats">
+        <div id="health-container">
+            <div id="health-bar-container">
+                <div id="health-bar"></div>
+            </div>
+            <div id="health-text">10/10</div>
+            <div id="regen-indicator">Regenerating...</div>
+        </div>
         <div class="currency-row">
             <img src="https://i.ibb.co/n87Ym7RY/pixilart-drawing-7.png" class="currency-icon">
             <span id="iron">0</span>
@@ -381,6 +436,8 @@
             <span id="emerald">0</span>
         </div>
     </div>
+    
+    <!-- Controls Hint -->
     <div id="controls-hint">
         WASD: Move | SPACE: Jump<br>
         <span id="crouch-hint">SHIFT: Crouch</span> | 1-9: Select<br>
@@ -391,6 +448,7 @@
         <span style="color: #88aaff">Right-Click with throwable item: Throw</span><br>
         <span style="color: #ff88ff">Click on Players: Attack</span>
     </div>
+    
     <div id="break-progress">
         <div id="break-progress-bar"></div>
     </div>
@@ -434,6 +492,10 @@
         let lastEnderpearlThrow = 0;
         let lastFireballThrow = 0;
         let lastWindchargeThrow = 0;
+        let currentHealth = 10;
+        let lastHitTime = 0;
+        let healthRegenTimer = null;
+        let eyeTextureIndex = 0;
 
         // --- Config ---
         const BLOCK_TYPES = {
@@ -537,6 +599,51 @@
             }
         });
 
+        // --- Health Functions ---
+        function updateHealthDisplay(health) {
+            currentHealth = health;
+            const healthBar = document.getElementById('health-bar');
+            const healthText = document.getElementById('health-text');
+            
+            const percentage = (health / 10) * 100;
+            healthBar.style.width = `${percentage}%`;
+            
+            // Change color based on health
+            if (health > 5) {
+                healthBar.style.background = '#4CAF50';
+            } else if (health > 2) {
+                healthBar.style.background = '#FFA500';
+            } else {
+                healthBar.style.background = '#FF0000';
+            }
+            
+            healthText.textContent = `${health}/10`;
+            
+            // Show regeneration indicator if health is not full
+            const regenIndicator = document.getElementById('regen-indicator');
+            if (health < 10) {
+                regenIndicator.style.opacity = '1';
+            } else {
+                regenIndicator.style.opacity = '0';
+            }
+        }
+
+        function startHealthRegeneration() {
+            if (healthRegenTimer) {
+                clearInterval(healthRegenTimer);
+            }
+            
+            healthRegenTimer = setInterval(() => {
+                const now = Date.now();
+                // Regenerate 1 health per second after 10 seconds of no damage
+                if (now - lastHitTime >= 10000 && currentHealth < 10) {
+                    currentHealth += 1;
+                    if (currentHealth > 10) currentHealth = 10;
+                    updateHealthDisplay(currentHealth);
+                }
+            }, 1000);
+        }
+
         // --- Timer Functions ---
         function updateTimerDisplay(seconds) {
             const timerElement = document.getElementById('timer');
@@ -626,7 +733,7 @@
         function updateWaitingMessage(playersNeeded) {
             const messageElement = document.getElementById('waiting-message');
             if (playersNeeded > 0) {
-                messageElement.textContent = `Waiting for 1 more player...`;
+                messageElement.textContent = `Waiting for ${playersNeeded} more player${playersNeeded > 1 ? 's' : ''}...`;
                 messageElement.style.display = 'block';
             } else {
                 messageElement.style.display = 'none';
@@ -662,6 +769,16 @@
         let emeraldSwordTexture = null;
         let axeTexture = null;
         let pickaxeTexture = null;
+        
+        // Eye textures
+        let eyeTextures = [];
+        const EYE_TEXTURE_URLS = [
+            'https://i.ibb.co/pvgrCqyD/pixil-frame-0.png',
+            'https://i.ibb.co/0yPBr5Bd/pixil-frame-0-1.png',
+            'https://i.ibb.co/nd5x9Tt/pixil-frame-0-2.png',
+            'https://i.ibb.co/pvByQySh/pixil-frame-0-4.png'
+        ];
+        
         let breakingTextures = [];
 
         // Texture URLs
@@ -781,6 +898,23 @@
             texture.minFilter = THREE.NearestFilter;
             pickaxeTexture = texture;
         });
+
+        // Load eye textures
+        const loadEyeTextures = async () => {
+            for (let i = 0; i < EYE_TEXTURE_URLS.length; i++) {
+                await new Promise((resolve) => {
+                    textureLoader.load(EYE_TEXTURE_URLS[i], (texture) => {
+                        texture.magFilter = THREE.NearestFilter;
+                        texture.minFilter = THREE.NearestFilter;
+                        texture.wrapS = THREE.RepeatWrapping;
+                        texture.wrapT = THREE.RepeatWrapping;
+                        eyeTextures[i] = texture;
+                        resolve();
+                    });
+                });
+            }
+        };
+        loadEyeTextures();
 
         // Load breaking textures
         const breakingTextureUrls = [
@@ -924,15 +1058,13 @@
             if (fireballTexture) {
                 material = new THREE.SpriteMaterial({ 
                     map: fireballTexture,
-                    color: 0xa4a6a5
-,
+                    color: 0xa4a6a5,
                     opacity: 1.0,
                     transparent: true
                 });
             } else {
                 material = new THREE.SpriteMaterial({ 
-                    color: 0xa4a6a5
-,
+                    color: 0xa4a6a5,
                     opacity: 1.0,
                     transparent: true
                 });
@@ -1240,32 +1372,31 @@
         }
 
         // --- Weapon/Tool Functions ---
-       function createWeaponToolMesh(type) {
-    let texture = null;
-    
-    if (type === 'Wooden Sword') texture = woodenSwordTexture;
-    else if (type === 'Iron Sword') texture = ironSwordTexture;
-    else if (type === 'Emerald Sword') texture = emeraldSwordTexture;
-    else if (type === 'Axe') texture = axeTexture;
-    else if (type === 'Pickaxe') texture = pickaxeTexture;
-    
-    if (!texture) return null;
-    
-    const material = new THREE.SpriteMaterial({ 
-        map: texture,
-        transparent: true,
-        opacity: 0.9,
-        depthTest: false,
-        depthWrite: false
-    });
-    
-    const mesh = new THREE.Sprite(material);
-    // CHANGED: Make 2x bigger for weapons/tools
-    const scaleMultiplier = 1.0; // Base scale for weapons/tools
-    mesh.scale.set(0.5 * scaleMultiplier, 0.5 * scaleMultiplier, 1);
-    
-    return mesh;
-}
+        function createWeaponToolMesh(type) {
+            let texture = null;
+            
+            if (type === 'Wooden Sword') texture = woodenSwordTexture;
+            else if (type === 'Iron Sword') texture = ironSwordTexture;
+            else if (type === 'Emerald Sword') texture = emeraldSwordTexture;
+            else if (type === 'Axe') texture = axeTexture;
+            else if (type === 'Pickaxe') texture = pickaxeTexture;
+            
+            if (!texture) return null;
+            
+            const material = new THREE.SpriteMaterial({ 
+                map: texture,
+                transparent: true,
+                opacity: 0.9,
+                depthTest: false,
+                depthWrite: false
+            });
+            
+            const mesh = new THREE.Sprite(material);
+            const scaleMultiplier = 1.0; // Base scale for weapons/tools
+            mesh.scale.set(0.5 * scaleMultiplier, 0.5 * scaleMultiplier, 1);
+            
+            return mesh;
+        }
 
         function removeWeaponToolFromHand() {
             if (weaponToolInHand) {
@@ -1834,16 +1965,19 @@
                     
                     const pos = intersect.point.clone().add(intersect.face.normal.multiplyScalar(0.5));
 
-                    const currentEyeHeight = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
-                    const currentPlayerHeight = isCrouching ? (PLAYER_HEIGHT - 0.5) : PLAYER_HEIGHT;
+                    const currentEyeHeightForFoot = isCrouching ? CROUCH_HEIGHT : EYE_HEIGHT;
+                    const footBox = new THREE.Box3().setFromCenterAndSize(
+                        new THREE.Vector3(camera.position.x, camera.position.y - currentEyeHeightForFoot, camera.position.z),
+                        new THREE.Vector3(PLAYER_RADIUS, 0.2, PLAYER_RADIUS)
+                    );
 
                     const blockX = Math.floor(pos.x);
                     const blockY = Math.floor(pos.y);
                     const blockZ = Math.floor(pos.z);
 
                     let canPlace = true;
-                    const playerFeetY = camera.position.y - currentEyeHeight;
-                    const playerHeadY = camera.position.y - currentEyeHeight + currentPlayerHeight;
+                    const playerFeetY = camera.position.y - currentEyeHeightForFoot;
+                    const playerHeadY = camera.position.y - currentEyeHeightForFoot + PLAYER_HEIGHT;
                     const blockMinY = blockY;
                     const blockMaxY = blockY + 1;
                     if (blockMaxY > playerFeetY && blockMinY < playerHeadY) {
@@ -2304,7 +2438,6 @@
                 data.group.visible = true;
                 
                 // FIX: Properly position player model to avoid sinking
-                // The server sends eye position, but we need to position the feet
                 const eyeHeight = data.crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
                 const targetFeetPosition = {
                     x: data.targetPos.x,
@@ -2582,7 +2715,7 @@
             return color;
         }
 
-        function createOtherPlayer(id, health = 10, equippedItem = null) {
+        function createOtherPlayer(id, health = 10, equippedItem = null, eyeIndex = 0) {
             const group = new THREE.Group();
             group.name = id;
 
@@ -2592,6 +2725,26 @@
             const head = new THREE.Mesh(headGeo, headMat);
             head.position.y = 1.4;
             group.add(head);
+
+            // Add eyes to the front of the head
+            if (eyeTextures.length > 0 && eyeIndex < eyeTextures.length) {
+                const eyeTexture = eyeTextures[eyeIndex];
+                const eyeMaterial = new THREE.MeshBasicMaterial({ 
+                    map: eyeTexture,
+                    transparent: true,
+                    opacity: 1.0,
+                    depthWrite: false
+                });
+                const eyeGeometry = new THREE.PlaneGeometry(0.4, 0.3);
+                const eyes = new THREE.Mesh(eyeGeometry, eyeMaterial);
+                
+                // Position eyes on the front of the head (positive Z)
+                eyes.position.set(0, 1.4, 0.31);
+                eyes.rotation.x = 0;
+                eyes.rotation.y = Math.PI;
+                
+                group.add(eyes);
+            }
 
             const bodyGeo = new THREE.BoxGeometry(0.6, 0.8, 0.3);
             const bodyColor = getPlayerColor(id);
@@ -2620,26 +2773,39 @@
             rightLeg.position.set(-0.2, 0, 0);
             group.add(rightLeg);
 
+            // Health bar above player
+            const healthBarCanvas = document.createElement('canvas');
+            healthBarCanvas.width = 40;
+            healthBarCanvas.height = 6;
+            const healthBarCtx = healthBarCanvas.getContext('2d');
+            const healthBarTexture = new THREE.CanvasTexture(healthBarCanvas);
+            const healthBarMaterial = new THREE.SpriteMaterial({ 
+                map: healthBarTexture,
+                transparent: true,
+                depthWrite: false
+            });
+            const healthBarSprite = new THREE.Sprite(healthBarMaterial);
+            healthBarSprite.position.y = 2.2;
+            healthBarSprite.scale.set(0.8, 0.12, 1);
+            group.add(healthBarSprite);
+
             // Name tag
             const canvas = document.createElement('canvas');
             canvas.width = 256;
-            canvas.height = 64;
+            canvas.height = 32;
             const ctx = canvas.getContext('2d');
             ctx.fillStyle = 'rgba(0,0,0,0.7)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.fillStyle = 'white';
-            ctx.font = 'bold 24px Arial';
+            ctx.font = 'bold 20px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText(id.substring(0, 6).toUpperCase(), 128, 25);
-            ctx.fillStyle = '#4CAF50';
-            ctx.font = '18px Arial';
-            ctx.fillText(`❤ ${health}/10`, 128, 50);
+            ctx.fillText(id.substring(0, 6).toUpperCase(), 128, 20);
             const texture = new THREE.CanvasTexture(canvas);
             const nameMesh = new THREE.Mesh(
-                new THREE.PlaneGeometry(1.5, 0.4),
+                new THREE.PlaneGeometry(1.2, 0.2),
                 new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide })
             );
-            nameMesh.position.y = 2.2;
+            nameMesh.position.y = 2.0;
             nameMesh.name = 'nameTag';
             group.add(nameMesh);
 
@@ -2648,17 +2814,22 @@
             otherPlayers.set(id, {
                 group,
                 head,
+                healthBar: healthBarSprite,
+                healthBarTexture: healthBarTexture,
+                healthBarCanvas: healthBarCanvas,
+                healthBarCtx: healthBarCtx,
                 targetPos: { x: 0, y: 0, z: 0 },
                 targetRot: { yaw: 0, pitch: 0 },
                 targetCrouch: false,
                 crouch: false,
                 spectator: false,
-                healthBar: null,
+                health: health,
                 equippedItem: equippedItem,
                 lastPos: null
             });
 
             playerHealth.set(id, health);
+            updatePlayerHealth(id, health);
             
             // Create item in hand if equipped
             if (equippedItem) {
@@ -2669,144 +2840,168 @@
         }
 
         function updateOtherPlayerItem(id, itemType) {
-    // Remove existing item
-    if (playerItems.has(id)) {
-        const oldItem = playerItems.get(id);
-        const op = otherPlayers.get(id);
-        if (op && op.group) {
-            op.group.remove(oldItem);
+            // Remove existing item
+            if (playerItems.has(id)) {
+                const oldItem = playerItems.get(id);
+                const op = otherPlayers.get(id);
+                if (op && op.group) {
+                    op.group.remove(oldItem);
+                }
+                playerItems.delete(id);
+            }
+            
+            if (!itemType) return;
+            
+            const op = otherPlayers.get(id);
+            if (!op || !op.group) return;
+            
+            let texture = null;
+            
+            // Map item types to textures
+            if (itemType === 'Wooden Sword') texture = woodenSwordTexture;
+            else if (itemType === 'Iron Sword') texture = ironSwordTexture;
+            else if (itemType === 'Emerald Sword') texture = emeraldSwordTexture;
+            else if (itemType === 'Axe') texture = axeTexture;
+            else if (itemType === 'Pickaxe') texture = pickaxeTexture;
+            else if (itemType === 'Enderpearl') texture = enderpearlTexture;
+            else if (itemType === 'Fireball') texture = fireballTexture;
+            else if (itemType === 'Wind Charge') texture = windchargeTexture;
+            else if (itemType === 'Grass') texture = grassTexture;
+            else if (itemType === 'Wood') texture = woodTexture;
+            else if (itemType === 'Stone') texture = stoneTexture;
+            else if (itemType === 'Obsidian') texture = obsidianTexture;
+            
+            // Check if this is a block (not a weapon, tool, or throwable item)
+            const blockData = BLOCK_TYPES[itemType];
+            const isWeapon = blockData && blockData.isWeapon;
+            const isTool = blockData && blockData.isTool;
+            const isThrowableItem = blockData && blockData.isItem;
+            const isBlock = blockData && !isWeapon && !isTool && !isThrowableItem;
+            
+            if (isBlock) {
+                // Create a cube for blocks
+                let material;
+                if (itemType === 'Grass' && grassTexture) {
+                    material = new THREE.MeshLambertMaterial({ map: grassTexture });
+                } else if (itemType === 'Wood' && woodTexture) {
+                    material = new THREE.MeshLambertMaterial({ map: woodTexture });
+                } else if (itemType === 'Stone' && stoneTexture) {
+                    material = new THREE.MeshLambertMaterial({ map: stoneTexture });
+                } else if (itemType === 'Obsidian' && obsidianTexture) {
+                    material = new THREE.MeshLambertMaterial({ map: obsidianTexture });
+                } else if (itemType === 'Glass') {
+                    material = new THREE.MeshLambertMaterial({ 
+                        color: blockData.color, 
+                        transparent: true, 
+                        opacity: 0.6 
+                    });
+                } else {
+                    material = new THREE.MeshLambertMaterial({ 
+                        color: blockData.color, 
+                        transparent: !!blockData.opacity, 
+                        opacity: blockData.opacity || 1 
+                    });
+                }
+                
+                const cube = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), material);
+                cube.position.set(-0.5, 0.35, 0);
+                cube.userData = { 
+                    type: 'item', 
+                    playerId: id, 
+                    itemType: itemType 
+                };
+                cube.isSprite = false; // Mark as not a sprite
+                
+                op.group.add(cube);
+                playerItems.set(id, cube);
+            } else if (texture) {
+                // Create sprite for weapons, tools, and throwable items
+                const material = new THREE.SpriteMaterial({ 
+                    map: texture,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                
+                const item = new THREE.Sprite(material);
+                
+                let scaleMultiplier = 1.0;
+                if (isWeapon || isTool || isThrowableItem) {
+                    scaleMultiplier = 2.0; // 2x bigger for weapons, tools, and throwable items
+                }
+                
+                item.scale.set(0.4 * scaleMultiplier, 0.4 * scaleMultiplier, 1);
+                item.position.set(-0.5, 0.3 * scaleMultiplier, 0);
+                item.userData = { 
+                    type: 'item', 
+                    playerId: id, 
+                    itemType: itemType 
+                };
+                item.isSprite = true; // Mark as sprite
+                
+                op.group.add(item);
+                playerItems.set(id, item);
+            } else if (blockData) {
+                // Fallback: colored sprite for items without specific textures
+                const material = new THREE.SpriteMaterial({ 
+                    color: blockData.color,
+                    transparent: true,
+                    opacity: itemType === 'Glass' ? 0.8 : 0.9
+                });
+                const item = new THREE.Sprite(material);
+                
+                let scaleMultiplier = 1.0;
+                if (isWeapon || isTool || isThrowableItem) {
+                    scaleMultiplier = 2.0; // 2x bigger for weapons, tools, and throwable items
+                }
+                
+                item.scale.set(0.4 * scaleMultiplier, 0.4 * scaleMultiplier, 1);
+                item.position.set(-0.5, 0.3 * scaleMultiplier, 0);
+                item.userData = { 
+                    type: 'item', 
+                    playerId: id, 
+                    itemType: itemType 
+                };
+                item.isSprite = true; // Mark as sprite
+                
+                op.group.add(item);
+                playerItems.set(id, item);
+            }
         }
-        playerItems.delete(id);
-    }
-    
-    if (!itemType) return;
-    
-    const op = otherPlayers.get(id);
-    if (!op || !op.group) return;
-    
-    let texture = null;
-    
-    // Map item types to textures
-    if (itemType === 'Wooden Sword') texture = woodenSwordTexture;
-    else if (itemType === 'Iron Sword') texture = ironSwordTexture;
-    else if (itemType === 'Emerald Sword') texture = emeraldSwordTexture;
-    else if (itemType === 'Axe') texture = axeTexture;
-    else if (itemType === 'Pickaxe') texture = pickaxeTexture;
-    else if (itemType === 'Enderpearl') texture = enderpearlTexture;
-    else if (itemType === 'Fireball') texture = fireballTexture;
-    else if (itemType === 'Wind Charge') texture = windchargeTexture;
-    else if (itemType === 'Grass') texture = grassTexture;
-    else if (itemType === 'Wood') texture = woodTexture;
-    else if (itemType === 'Stone') texture = stoneTexture;
-    else if (itemType === 'Obsidian') texture = obsidianTexture;
-    
-    // Check if this is a block (not a weapon, tool, or throwable item)
-    const blockData = BLOCK_TYPES[itemType];
-    const isWeapon = blockData && blockData.isWeapon;
-    const isTool = blockData && blockData.isTool;
-    const isThrowableItem = blockData && blockData.isItem;
-    const isBlock = blockData && !isWeapon && !isTool && !isThrowableItem;
-    
-    if (isBlock) {
-        // Create a cube for blocks
-        let material;
-        if (itemType === 'Grass' && grassTexture) {
-            material = new THREE.MeshLambertMaterial({ map: grassTexture });
-        } else if (itemType === 'Wood' && woodTexture) {
-            material = new THREE.MeshLambertMaterial({ map: woodTexture });
-        } else if (itemType === 'Stone' && stoneTexture) {
-            material = new THREE.MeshLambertMaterial({ map: stoneTexture });
-        } else if (itemType === 'Obsidian' && obsidianTexture) {
-            material = new THREE.MeshLambertMaterial({ map: obsidianTexture });
-        } else if (itemType === 'Glass') {
-            material = new THREE.MeshLambertMaterial({ 
-                color: blockData.color, 
-                transparent: true, 
-                opacity: 0.6 
-            });
-        } else {
-            material = new THREE.MeshLambertMaterial({ 
-                color: blockData.color, 
-                transparent: !!blockData.opacity, 
-                opacity: blockData.opacity || 1 
-            });
-        }
-        
-        const cube = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), material);
-        // CHANGED: Position in right hand
-        cube.position.set(-0.5, 0.35, 0);
-        cube.userData = { 
-            type: 'item', 
-            playerId: id, 
-            itemType: itemType 
-        };
-        cube.isSprite = false; // Mark as not a sprite
-        
-        op.group.add(cube);
-        playerItems.set(id, cube);
-    } else if (texture) {
-        // Create sprite for weapons, tools, and throwable items
-        const material = new THREE.SpriteMaterial({ 
-            map: texture,
-            transparent: true,
-            opacity: 0.9
-        });
-        
-        const item = new THREE.Sprite(material);
-        
-        // CHANGED: Make weapons, tools, and throwable items 2x bigger
-        let scaleMultiplier = 1.0;
-        if (isWeapon || isTool || isThrowableItem) {
-            scaleMultiplier = 2.0; // 2x bigger for weapons, tools, and throwable items
-        }
-        
-        item.scale.set(0.4 * scaleMultiplier, 0.4 * scaleMultiplier, 1);
-        // CHANGED: Position in right hand - adjust Y position for larger items
-        item.position.set(-0.5, 0.3 * scaleMultiplier, 0);
-        item.userData = { 
-            type: 'item', 
-            playerId: id, 
-            itemType: itemType 
-        };
-        item.isSprite = true; // Mark as sprite
-        
-        op.group.add(item);
-        playerItems.set(id, item);
-    } else if (blockData) {
-        // Fallback: colored sprite for items without specific textures
-        const material = new THREE.SpriteMaterial({ 
-            color: blockData.color,
-            transparent: true,
-            opacity: itemType === 'Glass' ? 0.8 : 0.9
-        });
-        const item = new THREE.Sprite(material);
-        
-        // CHANGED: Make weapons, tools, and throwable items 2x bigger
-        let scaleMultiplier = 1.0;
-        if (isWeapon || isTool || isThrowableItem) {
-            scaleMultiplier = 2.0; // 2x bigger for weapons, tools, and throwable items
-        }
-        
-        item.scale.set(0.4 * scaleMultiplier, 0.4 * scaleMultiplier, 1);
-        // CHANGED: Position in right hand - adjust Y position for larger items
-        item.position.set(-0.5, 0.3 * scaleMultiplier, 0);
-        item.userData = { 
-            type: 'item', 
-            playerId: id, 
-            itemType: itemType 
-        };
-        item.isSprite = true; // Mark as sprite
-        
-        op.group.add(item);
-        playerItems.set(id, item);
-    }
-}
 
         function updatePlayerHealth(id, health) {
             playerHealth.set(id, health);
             
             const op = otherPlayers.get(id);
             if (!op || !op.group) return;
+            
+            // Update health bar above player
+            if (op.healthBarCanvas && op.healthBarCtx) {
+                const canvas = op.healthBarCanvas;
+                const ctx = op.healthBarCtx;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw health bar background
+                ctx.fillStyle = '#555';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw health bar
+                const healthWidth = (health / 10) * canvas.width;
+                let healthColor = '#4CAF50';
+                if (health <= 5) healthColor = '#FFA500';
+                if (health <= 2) healthColor = '#FF0000';
+                
+                ctx.fillStyle = healthColor;
+                ctx.fillRect(0, 0, healthWidth, canvas.height);
+                
+                // Draw border
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(0, 0, canvas.width, canvas.height);
+                
+                if (op.healthBarTexture) {
+                    op.healthBarTexture.needsUpdate = true;
+                }
+            }
             
             const nameTag = op.group.children.find(child => child.name === 'nameTag');
             if (nameTag && nameTag.material.map) {
@@ -2816,17 +3011,9 @@
                 ctx.fillStyle = 'rgba(0,0,0,0.7)';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.fillStyle = 'white';
-                ctx.font = 'bold 24px Arial';
+                ctx.font = 'bold 20px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText(id.substring(0, 6).toUpperCase(), 128, 25);
-                
-                let healthColor = '#4CAF50';
-                if (health <= 5) healthColor = '#FFA500';
-                if (health <= 2) healthColor = '#FF0000';
-                
-                ctx.fillStyle = healthColor;
-                ctx.font = '18px Arial';
-                ctx.fillText(`❤ ${health}/10`, 128, 50);
+                ctx.fillText(id.substring(0, 6).toUpperCase(), 128, 20);
                 
                 nameTag.material.map.needsUpdate = true;
             }
@@ -2857,6 +3044,7 @@
         socket.on('yourId', (id) => {
             playerId = id;
             setSpectatorMode(true);
+            startHealthRegeneration();
         });
 
         socket.on('initWorld', ({ blocks, pickups, spawners: initSpawners, gameActive, playersNeeded }) => {
@@ -2874,13 +3062,12 @@
         });
 
         socket.on('playersSnapshot', (others) => {
-            others.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem }) => {
+            others.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem, eyeTextureIndex }) => {
                 if (spectator) return;
-                createOtherPlayer(id, health || 10, equippedItem);
+                createOtherPlayer(id, health || 10, equippedItem, eyeTextureIndex || 0);
                 const op = otherPlayers.get(id);
                 
                 // FIX: Properly position player model to avoid sinking
-                // The server sends eye position, but we need to position the feet
                 const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
                 op.targetPos = {
                     x: pos.x,
@@ -2894,13 +3081,12 @@
             });
         });
 
-        socket.on('newPlayer', ({ id, pos, rot, crouch, spectator, health, equippedItem }) => {
+        socket.on('newPlayer', ({ id, pos, rot, crouch, spectator, health, equippedItem, eyeTextureIndex }) => {
             if (spectator) return;
-            createOtherPlayer(id, health || 10, equippedItem);
+            createOtherPlayer(id, health || 10, equippedItem, eyeTextureIndex || 0);
             const op = otherPlayers.get(id);
             
             // FIX: Properly position player model to avoid sinking
-            // The server sends eye position, but we need to position the feet
             const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
             op.targetPos = {
                 x: pos.x,
@@ -2914,16 +3100,15 @@
         });
 
         socket.on('playersUpdate', (states) => {
-            states.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem }) => {
+            states.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem, eyeTextureIndex }) => {
                 if (id === playerId) return;
                 let op = otherPlayers.get(id);
                 if (!op && !spectator) {
-                    createOtherPlayer(id, health || 10, equippedItem);
+                    createOtherPlayer(id, health || 10, equippedItem, eyeTextureIndex || 0);
                     op = otherPlayers.get(id);
                 }
                 if (op) {
                     // FIX: Properly position player model to avoid sinking
-                    // The server sends eye position, but we need to position the feet
                     const eyeHeight = crouch ? CROUCH_HEIGHT : EYE_HEIGHT;
                     op.targetPos = {
                         x: pos.x,
@@ -3227,6 +3412,10 @@
             setSpectatorMode(spectator);
         });
 
+        socket.on('setEyeTexture', (index) => {
+            eyeTextureIndex = index;
+        });
+
         socket.on('updateWaiting', (playersNeeded) => {
             updateWaitingMessage(playersNeeded);
         });
@@ -3243,11 +3432,21 @@
 
         // Player combat events
         socket.on('playerHit', ({ attackerId, targetId, newHealth }) => {
+            if (targetId === playerId) {
+                updateHealthDisplay(newHealth);
+                lastHitTime = Date.now(); // Update last hit time for regeneration
+            }
+            
             updatePlayerHealth(targetId, newHealth);
             
             if (targetId === playerId && attackerId) {
                 showNotification(`You were hit! Health: ${newHealth}/10`, 2000);
             }
+        });
+
+        socket.on('updateHealth', (health) => {
+            updateHealthDisplay(health);
+            currentHealth = health;
         });
 
         socket.on('playerEliminated', ({ eliminatedId, eliminatorId }) => {
@@ -3265,6 +3464,7 @@
         // Start
         setSpectatorMode(true);
         updateUI();
+        updateHealthDisplay(10);
         animate();
 
         window.addEventListener('resize', () => {
