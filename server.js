@@ -1,4 +1,3 @@
-
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -628,8 +627,7 @@ io.on('connection', (socket) => {
         equippedItem: null,
         lastEnderpearlThrow: 0,
         lastFireballThrow: 0,
-        lastWindchargeThrow: 0,
-        eyeTextureIndex: Math.floor(Math.random() * 4) // Random eye texture for each player
+        lastWindchargeThrow: 0
     };
     
     players.set(socket.id, playerState);
@@ -656,7 +654,6 @@ io.on('connection', (socket) => {
     socket.emit('yourId', socket.id);
     socket.emit('setSpectator', true);
     socket.emit('updateHealth', playerState.health);
-    socket.emit('setEyeTexture', playerState.eyeTextureIndex);
 
     const otherPlayers = Array.from(players.entries())
         .filter(([id]) => id !== socket.id)
@@ -668,8 +665,7 @@ io.on('connection', (socket) => {
             crouch: p.crouch,
             spectator: p.spectator,
             health: p.health,
-            equippedItem: p.equippedItem,
-            eyeTextureIndex: p.eyeTextureIndex
+            equippedItem: p.equippedItem
         }));
     socket.emit('playersSnapshot', otherPlayers);
 
@@ -680,8 +676,7 @@ io.on('connection', (socket) => {
         crouch: playerState.crouch,
         spectator: playerState.spectator,
         health: playerState.health,
-        equippedItem: playerState.equippedItem,
-        eyeTextureIndex: playerState.eyeTextureIndex
+        equippedItem: playerState.equippedItem
     });
 
     updateWaitingMessages();
@@ -1902,8 +1897,7 @@ setInterval(() => {
         crouch: p.crouch,
         spectator: p.spectator,
         health: p.health,
-        equippedItem: p.equippedItem,
-        eyeTextureIndex: p.eyeTextureIndex
+        equippedItem: p.equippedItem
     }));
     io.emit('playersUpdate', states);
 }, 50);
