@@ -389,6 +389,7 @@ function resetGame() {
         p.lastWindchargeThrow = 0;
         p.lastHitTime = 0;
         p.lastHealthRegen = Date.now();
+        p.eyeTextureIndex = Math.floor(Math.random() * 4); // Reset eye texture
         
         io.to(id).emit('setSpectator', true);
         io.to(id).emit('respawn', {
@@ -627,7 +628,8 @@ io.on('connection', (socket) => {
         equippedItem: null,
         lastEnderpearlThrow: 0,
         lastFireballThrow: 0,
-        lastWindchargeThrow: 0
+        lastWindchargeThrow: 0,
+        eyeTextureIndex: Math.floor(Math.random() * 4) // Random eye texture (0-3)
     };
     
     players.set(socket.id, playerState);
@@ -665,7 +667,8 @@ io.on('connection', (socket) => {
             crouch: p.crouch,
             spectator: p.spectator,
             health: p.health,
-            equippedItem: p.equippedItem
+            equippedItem: p.equippedItem,
+            eyeTextureIndex: p.eyeTextureIndex
         }));
     socket.emit('playersSnapshot', otherPlayers);
 
@@ -676,7 +679,8 @@ io.on('connection', (socket) => {
         crouch: playerState.crouch,
         spectator: playerState.spectator,
         health: playerState.health,
-        equippedItem: playerState.equippedItem
+        equippedItem: playerState.equippedItem,
+        eyeTextureIndex: playerState.eyeTextureIndex
     });
 
     updateWaitingMessages();
@@ -696,6 +700,11 @@ io.on('connection', (socket) => {
             
             // Update equipped item (any item, not just weapons/tools)
             p.equippedItem = data.equippedItem;
+            
+            // Keep the same eye texture index when player updates
+            if (!p.eyeTextureIndex) {
+                p.eyeTextureIndex = Math.floor(Math.random() * 4);
+            }
         }
     });
 
@@ -1897,7 +1906,8 @@ setInterval(() => {
         crouch: p.crouch,
         spectator: p.spectator,
         health: p.health,
-        equippedItem: p.equippedItem
+        equippedItem: p.equippedItem,
+        eyeTextureIndex: p.eyeTextureIndex || Math.floor(Math.random() * 4)
     }));
     io.emit('playersUpdate', states);
 }, 50);
