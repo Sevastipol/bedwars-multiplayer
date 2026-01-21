@@ -2622,46 +2622,45 @@
             return color;
         }
 
-     function createOtherPlayer(id, health = 10, equippedItem = null) {
+  function createOtherPlayer(id, health = 10, equippedItem = null) {
     const group = new THREE.Group();
     group.name = id;
 
-    // Create head mesh with skin on all faces and eyes on front face
+    // Create head mesh with skin color on all sides
     const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-    
-    // Pick a random eye texture for this player
-    let eyeTexture = null;
-    if (eyeTextures.length > 0) {
-        const randomEyeIndex = Math.floor(Math.random() * eyeTextures.length);
-        eyeTexture = eyeTextures[randomEyeIndex];
-    }
-    
     const skinColor = 0xffdbac;
     
-    // Create materials for each face of the head cube
-    // For a BoxGeometry in Three.js, the material indices are:
-    // 0: right (x+)
-    // 1: left (x-)
-    // 2: top (y+)
-    // 3: bottom (y-)
-    // 4: front (z+)
-    // 5: back (z-)
-    
+    // Create array of materials for each face of the cube
     const headMaterials = [
-        new THREE.MeshLambertMaterial({ color: skinColor }), // right (0)
-        new THREE.MeshLambertMaterial({ color: skinColor }), // left (1)
-        new THREE.MeshLambertMaterial({ color: skinColor }), // top (2)
-        new THREE.MeshLambertMaterial({ color: skinColor }), // bottom (3)
-        // Front face (4) - eyes texture over skin
-        eyeTexture ? new THREE.MeshLambertMaterial({ 
-            color: skinColor, // Base skin color
-            map: eyeTexture, // Eyes texture overlay
-            transparent: true,
-            alphaTest: 0.5,
-            opacity: 1.0
-        }) : new THREE.MeshLambertMaterial({ color: skinColor }),
-        new THREE.MeshLambertMaterial({ color: skinColor })  // back (5)
+        // Right side - skin color
+        new THREE.MeshLambertMaterial({ color: skinColor }),
+        // Left side - skin color
+        new THREE.MeshLambertMaterial({ color: skinColor }),
+        // Top - skin color
+        new THREE.MeshLambertMaterial({ color: skinColor }),
+        // Bottom - skin color
+        new THREE.MeshLambertMaterial({ color: skinColor }),
+        // Front - skin color (face looking forward)
+        new THREE.MeshLambertMaterial({ color: skinColor }),
+        // Back - skin color + eye texture overlay
+        new THREE.MeshLambertMaterial({ color: skinColor })
     ];
+    
+    // Apply eye texture to the back face (index 5)
+    if (eyeTextures.length > 0) {
+        const randomEyeIndex = Math.floor(Math.random() * eyeTextures.length);
+        const eyeTexture = eyeTextures[randomEyeIndex];
+        
+        // Create a material with the eye texture as a transparent overlay
+        headMaterials[5] = new THREE.MeshBasicMaterial({
+            map: eyeTexture,
+            transparent: true,
+            alphaTest: 0.5, // Pixels with alpha lower than this are discarded
+            opacity: 1.0,
+            color: 0xffffff, // White color so the texture shows as-is
+            depthWrite: false // Important for proper transparency
+        });
+    }
     
     const head = new THREE.Mesh(headGeo, headMaterials);
     head.position.y = 1.4;
@@ -2741,7 +2740,6 @@
     
     return group;
 }
-
         function updateOtherPlayerItem(id, itemType) {
             // Remove existing item
             if (playerItems.has(id)) {
