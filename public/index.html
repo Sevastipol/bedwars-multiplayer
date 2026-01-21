@@ -684,7 +684,7 @@
             emeraldSword: 'https://i.ibb.co/przKkdMP/pixil-frame-0-12.png',
             axe: 'https://i.ibb.co/MDqY0ZM2/pixil-frame-0-13.png',
             pickaxe: 'https://i.ibb.co/MvmWrKG/pixil-frame-0-15.png',
-            // Eye texture URLs (kept but not used)
+            // Eye texture URLs
             eye1: 'https://i.ibb.co/pvgrCqyD/pixil-frame-0.png',
             eye2: 'https://i.ibb.co/0yPBr5Bd/pixil-frame-0-1.png',
             eye3: 'https://i.ibb.co/nd5x9Tt/pixil-frame-0-2.png',
@@ -790,13 +790,13 @@
             pickaxeTexture = texture;
         });
 
-        // Load eye textures (kept for potential future use)
+        // Load eye textures
         textureLoader.load(TEXTURE_URLS.eye1, (texture) => {
             texture.magFilter = THREE.NearestFilter;
             texture.minFilter = THREE.NearestFilter;
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
-            eyeTextures.push(texture);
+            eyeTextures[0] = texture;
         });
 
         textureLoader.load(TEXTURE_URLS.eye2, (texture) => {
@@ -804,7 +804,7 @@
             texture.minFilter = THREE.NearestFilter;
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
-            eyeTextures.push(texture);
+            eyeTextures[1] = texture;
         });
 
         textureLoader.load(TEXTURE_URLS.eye3, (texture) => {
@@ -812,7 +812,7 @@
             texture.minFilter = THREE.NearestFilter;
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
-            eyeTextures.push(texture);
+            eyeTextures[2] = texture;
         });
 
         textureLoader.load(TEXTURE_URLS.eye4, (texture) => {
@@ -820,7 +820,7 @@
             texture.minFilter = THREE.NearestFilter;
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
-            eyeTextures.push(texture);
+            eyeTextures[3] = texture;
         });
 
         // Load breaking textures
@@ -2622,20 +2622,57 @@
             return color;
         }
 
-        function createOtherPlayer(id, health = 10, equippedItem = null) {
+        // Helper function to update eye texture
+        function updatePlayerEyeTexture(op, textureIndex) {
+            if (!op || !op.head) return;
+            
+            const skinColor = 0xffdbac;
+            const skinMaterial = new THREE.MeshLambertMaterial({ color: skinColor });
+            const eyeTexture = eyeTextures[textureIndex] || eyeTextures[0];
+            const backMaterial = eyeTexture ? 
+                new THREE.MeshLambertMaterial({ map: eyeTexture }) : 
+                skinMaterial;
+            
+            // Update only the back face material
+            op.head.material[5] = backMaterial;
+            op.head.material[5].needsUpdate = true;
+        }
+
+        function createOtherPlayer(id, health = 10, equippedItem = null, eyeTextureIndex = 0) {
             const group = new THREE.Group();
             group.name = id;
 
-            // Create head mesh with skin color on all sides
+            // Create head with eye texture on the back face
             const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-            const skinColor = 0xffdbac;
             
-            // Simple skin material for all faces
-            const headMaterial = new THREE.MeshLambertMaterial({ color: skinColor });
-            const head = new THREE.Mesh(headGeo, headMaterial);
+            // Create materials for each face of the head
+            const skinColor = 0xffdbac;
+            const skinMaterial = new THREE.MeshLambertMaterial({ color: skinColor });
+            
+            // Determine which eye texture to use
+            const textureIndex = Math.min(Math.max(eyeTextureIndex || 0, 0), 3);
+            const eyeTexture = eyeTextures[textureIndex] || eyeTextures[0];
+            
+            // Create a material with the eye texture for the back face
+            const backMaterial = eyeTexture ? 
+                new THREE.MeshLambertMaterial({ map: eyeTexture }) : 
+                skinMaterial;
+            
+            // Apply eye texture only to the back face (face index 5 in BoxGeometry)
+            const headMaterials = [
+                skinMaterial, // right (0)
+                skinMaterial, // left (1)
+                skinMaterial, // top (2)
+                skinMaterial, // bottom (3)
+                skinMaterial, // front (4)
+                backMaterial  // back (5) - This is where the eyes go
+            ];
+            
+            const head = new THREE.Mesh(headGeo, headMaterials);
             head.position.y = 1.4;
             group.add(head);
 
+            // Create the rest of the body as before
             const bodyGeo = new THREE.BoxGeometry(0.6, 0.8, 0.3);
             const bodyColor = getPlayerColor(id);
             const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
@@ -2698,7 +2735,8 @@
                 spectator: false,
                 healthBar: null,
                 equippedItem: equippedItem,
-                lastPos: null
+                lastPos: null,
+                eyeTextureIndex: textureIndex // Store the eye texture index
             });
 
             playerHealth.set(id, health);
@@ -2917,9 +2955,9 @@
         });
 
         socket.on('playersSnapshot', (others) => {
-            others.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem }) => {
+            others.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem, eyeTextureIndex }) => {
                 if (spectator) return;
-                createOtherPlayer(id, health || 10, equippedItem);
+                createOtherPlayer(id, health || 10, equippedItem, eyeTextureIndex || 0);
                 const op = otherPlayers.get(id);
                 
                 // FIX: Properly position player model to avoid sinking
@@ -2934,12 +2972,13 @@
                 op.targetCrouch = crouch;
                 op.spectator = spectator;
                 op.equippedItem = equippedItem;
+                op.eyeTextureIndex = eyeTextureIndex || 0;
             });
         });
 
-        socket.on('newPlayer', ({ id, pos, rot, crouch, spectator, health, equippedItem }) => {
+        socket.on('newPlayer', ({ id, pos, rot, crouch, spectator, health, equippedItem, eyeTextureIndex }) => {
             if (spectator) return;
-            createOtherPlayer(id, health || 10, equippedItem);
+            createOtherPlayer(id, health || 10, equippedItem, eyeTextureIndex || 0);
             const op = otherPlayers.get(id);
             
             // FIX: Properly position player model to avoid sinking
@@ -2954,14 +2993,15 @@
             op.targetCrouch = crouch;
             op.spectator = spectator;
             op.equippedItem = equippedItem;
+            op.eyeTextureIndex = eyeTextureIndex || 0;
         });
 
         socket.on('playersUpdate', (states) => {
-            states.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem }) => {
+            states.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem, eyeTextureIndex }) => {
                 if (id === playerId) return;
                 let op = otherPlayers.get(id);
                 if (!op && !spectator) {
-                    createOtherPlayer(id, health || 10, equippedItem);
+                    createOtherPlayer(id, health || 10, equippedItem, eyeTextureIndex || 0);
                     op = otherPlayers.get(id);
                 }
                 if (op) {
@@ -2976,6 +3016,13 @@
                     op.targetRot = rot;
                     op.targetCrouch = crouch;
                     op.spectator = spectator;
+                    
+                    // Update eye texture if changed
+                    if (eyeTextureIndex !== undefined && eyeTextureIndex !== op.eyeTextureIndex) {
+                        op.eyeTextureIndex = eyeTextureIndex;
+                        // Update the head material if needed
+                        updatePlayerEyeTexture(op, eyeTextureIndex);
+                    }
                     
                     if (equippedItem !== op.equippedItem) {
                         op.equippedItem = equippedItem;
