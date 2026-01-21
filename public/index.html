@@ -2622,21 +2622,13 @@
             return color;
         }
 
-       function createOtherPlayer(id, health = 10, equippedItem = null) {
+     function createOtherPlayer(id, health = 10, equippedItem = null) {
     const group = new THREE.Group();
     group.name = id;
 
-    // Create head mesh with skin on all faces
+    // Create head mesh with skin on all faces and eyes on front face
     const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-    const skinColor = 0xffdbac;
     
-    // Simple skin material for all faces
-    const headMaterial = new THREE.MeshLambertMaterial({ color: skinColor });
-    const head = new THREE.Mesh(headGeo, headMaterial);
-    head.position.y = 1.4;
-    group.add(head);
-
-    // Create eye texture sprite and position it in front of the head
     // Pick a random eye texture for this player
     let eyeTexture = null;
     if (eyeTextures.length > 0) {
@@ -2644,23 +2636,36 @@
         eyeTexture = eyeTextures[randomEyeIndex];
     }
     
-    if (eyeTexture) {
-        const eyeMaterial = new THREE.SpriteMaterial({ 
-            map: eyeTexture,
+    const skinColor = 0xffdbac;
+    
+    // Create materials for each face of the head cube
+    // For a BoxGeometry in Three.js, the material indices are:
+    // 0: right (x+)
+    // 1: left (x-)
+    // 2: top (y+)
+    // 3: bottom (y-)
+    // 4: front (z+)
+    // 5: back (z-)
+    
+    const headMaterials = [
+        new THREE.MeshLambertMaterial({ color: skinColor }), // right (0)
+        new THREE.MeshLambertMaterial({ color: skinColor }), // left (1)
+        new THREE.MeshLambertMaterial({ color: skinColor }), // top (2)
+        new THREE.MeshLambertMaterial({ color: skinColor }), // bottom (3)
+        // Front face (4) - eyes texture over skin
+        eyeTexture ? new THREE.MeshLambertMaterial({ 
+            color: skinColor, // Base skin color
+            map: eyeTexture, // Eyes texture overlay
             transparent: true,
-            alphaTest: 0.1,
+            alphaTest: 0.5,
             opacity: 1.0
-        });
-        const eyeSprite = new THREE.Sprite(eyeMaterial);
-        // Position slightly in front of the head (z-index trick)
-        // The head extends from -0.3 to 0.3 in local coordinates, so position at -0.32
-        eyeSprite.position.set(0, 0, -0.32);
-        // Make it slightly smaller than the head to fit nicely
-        eyeSprite.scale.set(0.55, 0.55, 1);
-        // Make the sprite face forward
-        eyeSprite.rotation.y = Math.PI; // Rotate 180 degrees to face forward
-        head.add(eyeSprite);
-    }
+        }) : new THREE.MeshLambertMaterial({ color: skinColor }),
+        new THREE.MeshLambertMaterial({ color: skinColor })  // back (5)
+    ];
+    
+    const head = new THREE.Mesh(headGeo, headMaterials);
+    head.position.y = 1.4;
+    group.add(head);
 
     const bodyGeo = new THREE.BoxGeometry(0.6, 0.8, 0.3);
     const bodyColor = getPlayerColor(id);
