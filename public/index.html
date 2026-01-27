@@ -345,6 +345,86 @@
             width: 100%;
             transition: width 0.3s ease;
         }
+
+        /* Chat Styles */
+        #chat-container {
+            position: absolute;
+            bottom: 60px;
+            right: 20px;
+            width: 300px;
+            height: 300px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 5px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+            display: none;
+        }
+
+        #chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 10px;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .chat-message {
+            margin-bottom: 4px;
+            word-wrap: break-word;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+
+        .chat-message.system {
+            color: #ffff88;
+            font-style: italic;
+        }
+
+        .chat-message.self {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .chat-message .player-name {
+            font-weight: bold;
+            margin-right: 5px;
+        }
+
+        #chat-input {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 5px;
+            border-radius: 3px;
+            outline: none;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 12px;
+        }
+
+        #chat-input:focus {
+            border-color: rgba(255, 255, 255, 0.6);
+        }
+
+        #chat-toggle {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.2s;
+            z-index: 99;
+        }
+
+        #chat-toggle:hover {
+            background: rgba(0, 0, 0, 0.7);
+        }
     </style>
 </head>
 <body>
@@ -389,7 +469,8 @@
         <span style="color: #88ff88">R-Click: Build</span><br>
         <span style="color: #ff8888">Q: Drop Item</span><br>
         <span style="color: #88aaff">Right-Click with throwable item: Throw</span><br>
-        <span style="color: #ff88ff">Click on Players: Attack</span>
+        <span style="color: #ff88ff">Click on Players: Attack</span><br>
+        <span style="color: #ffff88">T: Open Chat | /: Quick Chat</span>
     </div>
     <div id="break-progress">
         <div id="break-progress-bar"></div>
@@ -403,6 +484,14 @@
         <p style="color: #888; margin-top: 20px; font-size: 0.8em;">Press [B] to Close</p>
     </div>
     <div id="notification"></div>
+
+    <!-- Chat Elements -->
+    <div id="chat-container">
+        <div id="chat-messages"></div>
+        <input type="text" id="chat-input" placeholder="Type your message...">
+    </div>
+
+    <div id="chat-toggle">Chat [T]</div>
 
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script type="importmap">
@@ -434,6 +523,10 @@
         let lastEnderpearlThrow = 0;
         let lastFireballThrow = 0;
         let lastWindchargeThrow = 0;
+
+        // Chat state
+        let isChatOpen = false;
+        let chatHistory = [];
 
         // --- Config ---
         const BLOCK_TYPES = {
@@ -505,7 +598,7 @@
             document.getElementById('fullscreen-overlay').style.display = 'none';
             
             setTimeout(() => {
-                if (!controls.isLocked && !isShopOpen()) {
+                if (!controls.isLocked && !isShopOpen() && !isChatOpen) {
                     controls.lock();
                 }
             }, 500);
@@ -592,9 +685,9 @@
                 // Remove weapon/tool from hand
                 removeWeaponToolFromHand();
                 
-                if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
+                if (isFullscreen() && !controls.isLocked && !isShopOpen() && !isChatOpen) {
                     setTimeout(() => {
-                        if (!controls.isLocked && !isShopOpen()) {
+                        if (!controls.isLocked && !isShopOpen() && !isChatOpen) {
                             controls.lock();
                         }
                     }, 100);
@@ -612,9 +705,9 @@
                 // Update equipment in hand
                 updateEquipmentInHand();
                 
-                if (isFullscreen() && !controls.isLocked && !isShopOpen()) {
+                if (isFullscreen() && !controls.isLocked && !isShopOpen() && !isChatOpen) {
                     setTimeout(() => {
-                        if (!controls.isLocked && !isShopOpen()) {
+                        if (!controls.isLocked && !isShopOpen() && !isChatOpen) {
                             controls.lock();
                         }
                     }, 100);
@@ -632,6 +725,96 @@
                 messageElement.style.display = 'none';
             }
         }
+
+        // --- Chat Functions ---
+        function toggleChat() {
+            const chatContainer = document.getElementById('chat-container');
+            const chatToggle = document.getElementById('chat-toggle');
+            const chatInput = document.getElementById('chat-input');
+            
+            isChatOpen = !isChatOpen;
+            
+            if (isChatOpen) {
+                chatContainer.style.display = 'flex';
+                chatToggle.textContent = 'Close Chat [T]';
+                
+                // Unlock controls while typing
+                if (controls.isLocked && !isShopOpen()) {
+                    controls.unlock();
+                }
+                
+                // Focus input after a short delay
+                setTimeout(() => {
+                    chatInput.focus();
+                }, 50);
+            } else {
+                chatContainer.style.display = 'none';
+                chatToggle.textContent = 'Chat [T]';
+                chatInput.blur();
+                
+                // Relock controls if not in shop
+                if (!isShopOpen() && !isSpectator) {
+                    controls.lock();
+                }
+            }
+        }
+
+        // Add chat message to display
+        function addChatMessage(chatData) {
+            const chatMessages = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${chatData.isSystem ? 'system' : chatData.id === playerId ? 'self' : ''}`;
+            
+            // Format time
+            const time = new Date(chatData.timestamp);
+            const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
+            
+            if (chatData.isSystem) {
+                messageDiv.innerHTML = `[${timeStr}] <span class="system-message">${chatData.message}</span>`;
+            } else {
+                messageDiv.innerHTML = `[${timeStr}] <span class="player-name" style="color: ${getPlayerColorHex(chatData.id)}">${chatData.playerName}:</span> ${chatData.message}`;
+            }
+            
+            chatMessages.appendChild(messageDiv);
+            
+            // Auto-scroll to bottom
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            // Add to history
+            chatHistory.push(chatData);
+            if (chatHistory.length > 100) {
+                chatHistory.shift();
+            }
+        }
+
+        // Helper function to get player color for chat
+        function getPlayerColorHex(id) {
+            let hash = 0;
+            for (let i = 0; i < id.length; i++) {
+                hash = id.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            hash = Math.abs(hash) % 360;
+            const color = new THREE.Color().setHSL(hash / 360, 0.7, 0.6);
+            return '#' + color.getHexString();
+        }
+
+        // Handle chat input
+        document.getElementById('chat-input').addEventListener('keydown', (e) => {
+            if (e.code === 'Enter') {
+                const message = e.target.value.trim();
+                if (message !== '') {
+                    socket.emit('chatMessage', message);
+                    e.target.value = '';
+                }
+            }
+            
+            if (e.code === 'Escape') {
+                toggleChat();
+            }
+        });
+
+        // Initialize chat toggle button
+        document.getElementById('chat-toggle').addEventListener('click', toggleChat);
 
         // --- Three.js Setup ---
         const scene = new THREE.Scene();
@@ -684,7 +867,7 @@
             emeraldSword: 'https://i.ibb.co/przKkdMP/pixil-frame-0-12.png',
             axe: 'https://i.ibb.co/MDqY0ZM2/pixil-frame-0-13.png',
             pickaxe: 'https://i.ibb.co/MvmWrKG/pixil-frame-0-15.png',
-            // Eye texture URLs
+            // Eye texture URLs (kept but not used)
             eye1: 'https://i.ibb.co/pvgrCqyD/pixil-frame-0.png',
             eye2: 'https://i.ibb.co/0yPBr5Bd/pixil-frame-0-1.png',
             eye3: 'https://i.ibb.co/nd5x9Tt/pixil-frame-0-2.png',
@@ -790,13 +973,13 @@
             pickaxeTexture = texture;
         });
 
-        // Load eye textures
+        // Load eye textures (kept for potential future use)
         textureLoader.load(TEXTURE_URLS.eye1, (texture) => {
             texture.magFilter = THREE.NearestFilter;
             texture.minFilter = THREE.NearestFilter;
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
-            eyeTextures[0] = texture;
+            eyeTextures.push(texture);
         });
 
         textureLoader.load(TEXTURE_URLS.eye2, (texture) => {
@@ -804,7 +987,7 @@
             texture.minFilter = THREE.NearestFilter;
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
-            eyeTextures[1] = texture;
+            eyeTextures.push(texture);
         });
 
         textureLoader.load(TEXTURE_URLS.eye3, (texture) => {
@@ -812,7 +995,7 @@
             texture.minFilter = THREE.NearestFilter;
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
-            eyeTextures[2] = texture;
+            eyeTextures.push(texture);
         });
 
         textureLoader.load(TEXTURE_URLS.eye4, (texture) => {
@@ -820,7 +1003,7 @@
             texture.minFilter = THREE.NearestFilter;
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
-            eyeTextures[3] = texture;
+            eyeTextures.push(texture);
         });
 
         // Load breaking textures
@@ -1601,6 +1784,32 @@
         document.addEventListener('keydown', (e) => {
             if (!isFullscreen()) return;
             
+            // Chat key handling
+            if (e.code === 'KeyT' && !isShopOpen()) {
+                toggleChat();
+                e.preventDefault();
+                return;
+            }
+            
+            // / key focuses chat input directly
+            if (e.code === 'Slash' && !isShopOpen()) {
+                if (!isChatOpen) {
+                    toggleChat();
+                }
+                setTimeout(() => {
+                    document.getElementById('chat-input').focus();
+                }, 50);
+                e.preventDefault();
+                return;
+            }
+            
+            // ESC closes chat if open
+            if (e.code === 'Escape' && isChatOpen && document.activeElement.id === 'chat-input') {
+                toggleChat();
+                e.preventDefault();
+                return;
+            }
+            
             if (isSpectator) {
                 if(e.code === 'KeyB') return;
                 
@@ -1695,14 +1904,14 @@
             }
             
             if (isSpectator) {
-                if (!controls.isLocked && !isShopOpen()) {
+                if (!controls.isLocked && !isShopOpen() && !isChatOpen) {
                     controls.lock();
                 }
                 return;
             }
             
             if (!controls.isLocked) {
-                if(!isShopOpen()) controls.lock();
+                if(!isShopOpen() && !isChatOpen) controls.lock();
                 return;
             }
 
@@ -2604,7 +2813,7 @@
             
             if (isVisible) {
                 shop.style.display = 'none';
-                controls.lock();
+                if (!isChatOpen) controls.lock();
             } else {
                 shop.style.display = 'block';
                 controls.unlock();
@@ -2622,57 +2831,20 @@
             return color;
         }
 
-        // Helper function to update eye texture
-        function updatePlayerEyeTexture(op, textureIndex) {
-            if (!op || !op.head) return;
-            
-            const skinColor = 0xffdbac;
-            const skinMaterial = new THREE.MeshLambertMaterial({ color: skinColor });
-            const eyeTexture = eyeTextures[textureIndex] || eyeTextures[0];
-            const backMaterial = eyeTexture ? 
-                new THREE.MeshLambertMaterial({ map: eyeTexture }) : 
-                skinMaterial;
-            
-            // Update only the back face material
-            op.head.material[5] = backMaterial;
-            op.head.material[5].needsUpdate = true;
-        }
-
-        function createOtherPlayer(id, health = 10, equippedItem = null, eyeTextureIndex = 0) {
+        function createOtherPlayer(id, health = 10, equippedItem = null) {
             const group = new THREE.Group();
             group.name = id;
 
-            // Create head with eye texture on the back face
+            // Create head mesh with skin color on all sides
             const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-            
-            // Create materials for each face of the head
             const skinColor = 0xffdbac;
-            const skinMaterial = new THREE.MeshLambertMaterial({ color: skinColor });
             
-            // Determine which eye texture to use
-            const textureIndex = Math.min(Math.max(eyeTextureIndex || 0, 0), 3);
-            const eyeTexture = eyeTextures[textureIndex] || eyeTextures[0];
-            
-            // Create a material with the eye texture for the back face
-            const backMaterial = eyeTexture ? 
-                new THREE.MeshLambertMaterial({ map: eyeTexture }) : 
-                skinMaterial;
-            
-            // Apply eye texture only to the back face (face index 5 in BoxGeometry)
-            const headMaterials = [
-                skinMaterial, // right (0)
-                skinMaterial, // left (1)
-                skinMaterial, // top (2)
-                skinMaterial, // bottom (3)
-                skinMaterial, // front (4)
-                backMaterial  // back (5) - This is where the eyes go
-            ];
-            
-            const head = new THREE.Mesh(headGeo, headMaterials);
+            // Simple skin material for all faces
+            const headMaterial = new THREE.MeshLambertMaterial({ color: skinColor });
+            const head = new THREE.Mesh(headGeo, headMaterial);
             head.position.y = 1.4;
             group.add(head);
 
-            // Create the rest of the body as before
             const bodyGeo = new THREE.BoxGeometry(0.6, 0.8, 0.3);
             const bodyColor = getPlayerColor(id);
             const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
@@ -2735,8 +2907,7 @@
                 spectator: false,
                 healthBar: null,
                 equippedItem: equippedItem,
-                lastPos: null,
-                eyeTextureIndex: textureIndex // Store the eye texture index
+                lastPos: null
             });
 
             playerHealth.set(id, health);
@@ -2954,10 +3125,19 @@
             updateWaitingMessage(playersNeeded);
         });
 
+        // Chat events
+        socket.on('chatMessage', (chatData) => {
+            addChatMessage(chatData);
+        });
+
+        socket.on('chatHistory', (history) => {
+            history.forEach(addChatMessage);
+        });
+
         socket.on('playersSnapshot', (others) => {
-            others.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem, eyeTextureIndex }) => {
+            others.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem }) => {
                 if (spectator) return;
-                createOtherPlayer(id, health || 10, equippedItem, eyeTextureIndex || 0);
+                createOtherPlayer(id, health || 10, equippedItem);
                 const op = otherPlayers.get(id);
                 
                 // FIX: Properly position player model to avoid sinking
@@ -2972,13 +3152,12 @@
                 op.targetCrouch = crouch;
                 op.spectator = spectator;
                 op.equippedItem = equippedItem;
-                op.eyeTextureIndex = eyeTextureIndex || 0;
             });
         });
 
-        socket.on('newPlayer', ({ id, pos, rot, crouch, spectator, health, equippedItem, eyeTextureIndex }) => {
+        socket.on('newPlayer', ({ id, pos, rot, crouch, spectator, health, equippedItem }) => {
             if (spectator) return;
-            createOtherPlayer(id, health || 10, equippedItem, eyeTextureIndex || 0);
+            createOtherPlayer(id, health || 10, equippedItem);
             const op = otherPlayers.get(id);
             
             // FIX: Properly position player model to avoid sinking
@@ -2993,15 +3172,14 @@
             op.targetCrouch = crouch;
             op.spectator = spectator;
             op.equippedItem = equippedItem;
-            op.eyeTextureIndex = eyeTextureIndex || 0;
         });
 
         socket.on('playersUpdate', (states) => {
-            states.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem, eyeTextureIndex }) => {
+            states.forEach(({ id, pos, rot, crouch, spectator, health, equippedItem }) => {
                 if (id === playerId) return;
                 let op = otherPlayers.get(id);
                 if (!op && !spectator) {
-                    createOtherPlayer(id, health || 10, equippedItem, eyeTextureIndex || 0);
+                    createOtherPlayer(id, health || 10, equippedItem);
                     op = otherPlayers.get(id);
                 }
                 if (op) {
@@ -3016,13 +3194,6 @@
                     op.targetRot = rot;
                     op.targetCrouch = crouch;
                     op.spectator = spectator;
-                    
-                    // Update eye texture if changed
-                    if (eyeTextureIndex !== undefined && eyeTextureIndex !== op.eyeTextureIndex) {
-                        op.eyeTextureIndex = eyeTextureIndex;
-                        // Update the head material if needed
-                        updatePlayerEyeTexture(op, eyeTextureIndex);
-                    }
                     
                     if (equippedItem !== op.equippedItem) {
                         op.equippedItem = equippedItem;
