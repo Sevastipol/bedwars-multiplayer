@@ -49,6 +49,10 @@ const fireballs = new Map();
 const windcharges = new Map();
 const breakingAnimations = new Map();
 
+// Chat state
+const chatMessages = [];
+const MAX_CHAT_MESSAGES = 50;
+
 let gameActive = false;
 let countdownTimer = null;
 let roundStartTime = null;
@@ -311,6 +315,8 @@ function endGame(winnerId) {
     
     console.log(`Game ended! Winner: ${winnerId || 'No winner'}`);
     
+    sendSystemMessage(`Game ended! ${winnerId ? `Player ${winnerId.substring(0,6)} wins!` : 'No winner'}`);
+    
     io.emit('gameEnd', { winner: winnerId });
     
     setTimeout(() => {
@@ -323,6 +329,8 @@ function eliminatePlayer(playerId, eliminatorId) {
     if (!p) return;
     
     console.log(`Eliminating player ${playerId}. Eliminator: ${eliminatorId}`);
+    
+    sendSystemMessage(`${playerId.substring(0,6)} was eliminated by ${eliminatorId ? eliminatorId.substring(0,6) : 'the void'}!`);
     
     p.spectator = true;
     p.health = PLAYER_MAX_HEALTH;
@@ -389,7 +397,6 @@ function resetGame() {
         p.lastWindchargeThrow = 0;
         p.lastHitTime = 0;
         p.lastHealthRegen = Date.now();
-        p.eyeTextureIndex = Math.floor(Math.random() * 4); // Reset eye texture
         
         io.to(id).emit('setSpectator', true);
         io.to(id).emit('respawn', {
@@ -436,6 +443,7 @@ function startPlayerCheck() {
                 console.log('Starting countdown...');
                 let count = 10;
                 io.emit('notification', 'Game starting in 10 seconds!');
+                sendSystemMessage('Game starting in 10 seconds!');
                 
                 countdownTimer = setInterval(() => {
                     io.emit('countdown', count);
@@ -476,6 +484,7 @@ function startPlayerCheck() {
                             startRoundTimer();
                             
                             io.emit('gameStart');
+                            sendSystemMessage('Round started! Good luck!');
                         } else {
                             io.emit('notification', 'Not enough players assigned. Waiting...');
                             assignedPlayers.forEach(id => {
@@ -608,6 +617,103 @@ function applyExplosionKnockback(target, explosionPos, radius, force) {
     io.to(target.id).emit('teleport', newPos);
 }
 
+// Chat Functions
+function sendSystemMessage(message) {
+    const chatData = {
+        id: 'system',
+        playerName: 'SYSTEM',
+        message: message,
+        timestamp: Date.now(),
+        isSystem: true
+    };
+    
+    chatMessages.push(chatData);
+    if (chatMessages.length > MAX_CHAT_MESSAGES) {
+        chatMessages.shift();
+    }
+    
+    io.emit('chatMessage', chatData);
+}
+
+function handleCommand(playerId, command) {
+    const p = players.get(playerId);
+    if (!p) return;
+    
+    const parts = command.split(' ');
+    const cmd = parts[0].toLowerCase();
+    const args = parts.slice(1);
+    
+    switch(cmd) {
+        case '/help':
+            io.to(playerId).emit('chatMessage', {
+                id: 'system',
+                playerName: 'SYSTEM',
+                message: 'Available commands: /help, /players, /stats, /team',
+                timestamp: Date.now(),
+                isSystem: true,
+                isDirect: true
+            });
+            break;
+            
+        case '/players':
+            const activePlayers = getActivePlayers();
+            const spectatorCount = Array.from(players.values()).filter(p => p.spectator).length;
+            io.to(playerId).emit('chatMessage', {
+                id: 'system',
+                playerName: 'SYSTEM',
+                message: `Players: ${activePlayers.length} active, ${spectorCount} spectators`,
+                timestamp: Date.now(),
+                isSystem: true,
+                isDirect: true
+            });
+            break;
+            
+        case '/stats':
+            io.to(playerId).emit('chatMessage', {
+                id: 'system',
+                playerName: 'SYSTEM',
+                message: `Your stats: Iron: ${p.currency.iron}, Gold: ${p.currency.gold}, Emerald: ${p.currency.emerald}, Health: ${p.health}`,
+                timestamp: Date.now(),
+                isSystem: true,
+                isDirect: true
+            });
+            break;
+            
+        case '/team':
+            if (p.bedPos) {
+                io.to(playerId).emit('chatMessage', {
+                    id: 'system',
+                    playerName: 'SYSTEM',
+                    message: 'You are on an iron island team',
+                    timestamp: Date.now(),
+                    isSystem: true,
+                    isDirect: true
+                });
+            } else {
+                io.to(playerId).emit('chatMessage', {
+                    id: 'system',
+                    playerName: 'SYSTEM',
+                    message: 'You are not assigned to a team',
+                    timestamp: Date.now(),
+                    isSystem: true,
+                    isDirect: true
+                });
+            }
+            break;
+            
+        default:
+            io.to(playerId).emit('chatMessage', {
+                id: 'system',
+                playerName: 'SYSTEM',
+                message: `Unknown command: ${cmd}. Type /help for available commands`,
+                timestamp: Date.now(),
+                isSystem: true,
+                isDirect: true
+            });
+            break;
+    }
+}
+
 io.on('connection', (socket) => {
     console.log(`New connection: ${socket.id}`);
     
@@ -628,8 +734,7 @@ io.on('connection', (socket) => {
         equippedItem: null,
         lastEnderpearlThrow: 0,
         lastFireballThrow: 0,
-        lastWindchargeThrow: 0,
-        eyeTextureIndex: Math.floor(Math.random() * 4) // Random eye texture (0-3)
+        lastWindchargeThrow: 0
     };
     
     players.set(socket.id, playerState);
@@ -657,6 +762,10 @@ io.on('connection', (socket) => {
     socket.emit('setSpectator', true);
     socket.emit('updateHealth', playerState.health);
 
+    // Send chat history
+    const initChat = chatMessages.slice(-10); // Last 10 messages
+    socket.emit('chatHistory', initChat);
+
     const otherPlayers = Array.from(players.entries())
         .filter(([id]) => id !== socket.id)
         .filter(([_, p]) => !p.spectator)
@@ -667,8 +776,7 @@ io.on('connection', (socket) => {
             crouch: p.crouch,
             spectator: p.spectator,
             health: p.health,
-            equippedItem: p.equippedItem,
-            eyeTextureIndex: p.eyeTextureIndex
+            equippedItem: p.equippedItem
         }));
     socket.emit('playersSnapshot', otherPlayers);
 
@@ -679,8 +787,7 @@ io.on('connection', (socket) => {
         crouch: playerState.crouch,
         spectator: playerState.spectator,
         health: playerState.health,
-        equippedItem: playerState.equippedItem,
-        eyeTextureIndex: playerState.eyeTextureIndex
+        equippedItem: playerState.equippedItem
     });
 
     updateWaitingMessages();
@@ -688,6 +795,36 @@ io.on('connection', (socket) => {
     if (!playerCheckInterval) {
         startPlayerCheck();
     }
+
+    // Chat message handler
+    socket.on('chatMessage', (message) => {
+        const p = players.get(socket.id);
+        if (!p || !message || message.trim() === '') return;
+        
+        const trimmedMessage = message.trim().slice(0, 200); // Limit message length
+        
+        // Check for commands
+        if (trimmedMessage.startsWith('/')) {
+            handleCommand(socket.id, trimmedMessage);
+            return;
+        }
+        
+        const chatData = {
+            id: socket.id,
+            playerName: socket.id.substring(0, 6).toUpperCase(),
+            message: trimmedMessage,
+            timestamp: Date.now(),
+            isSystem: false
+        };
+        
+        chatMessages.push(chatData);
+        if (chatMessages.length > MAX_CHAT_MESSAGES) {
+            chatMessages.shift();
+        }
+        
+        // Broadcast to all players
+        io.emit('chatMessage', chatData);
+    });
 
     socket.on('playerUpdate', (data) => {
         const p = players.get(socket.id);
@@ -700,11 +837,6 @@ io.on('connection', (socket) => {
             
             // Update equipped item (any item, not just weapons/tools)
             p.equippedItem = data.equippedItem;
-            
-            // Keep the same eye texture index when player updates
-            if (!p.eyeTextureIndex) {
-                p.eyeTextureIndex = Math.floor(Math.random() * 4);
-            }
         }
     });
 
@@ -1906,8 +2038,7 @@ setInterval(() => {
         crouch: p.crouch,
         spectator: p.spectator,
         health: p.health,
-        equippedItem: p.equippedItem,
-        eyeTextureIndex: p.eyeTextureIndex || Math.floor(Math.random() * 4)
+        equippedItem: p.equippedItem
     }));
     io.emit('playersUpdate', states);
 }, 50);
